@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Gold coin -->
+  <circle cx="60" cy="60" r="30" fill="#F59E0B"/>
+  <circle cx="60" cy="60" r="25" fill="#FBBF24"/>
+  <text x="60" y="68" font-size="24" font-weight="bold" text-anchor="middle" fill="#7C2D12">$</text>
+  
+  <!-- Check mark -->
+  <circle cx="90" cy="40" r="20" fill="#3B82F6"/>
+  <path d="M80 40L88 48L100 36" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Sparkles -->
+  <path d="M30 30L35 25M30 30L25 25M30 30L25 35M30 30L35 35" stroke="#F59E0B" stroke-width="2" stroke-linecap="round"/>
+  <path d="M100 80L105 75M100 80L95 75M100 80L95 85M100 80L105 85" stroke="#3B82F6" stroke-width="2" stroke-linecap="round"/>
+</svg>
