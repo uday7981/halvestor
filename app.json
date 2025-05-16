@@ -4,7 +4,7 @@
     "slug": "halvestor",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/inv-splash.svg",
+    "icon": "./assets/images/inv-splash.png",
     "scheme": "trading",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -14,7 +14,7 @@
     },
     "splash": {
       "backgroundColor": "#3B82F6",
-      "image": "./assets/images/inv-splash.svg",
+      "image": "./assets/images/inv-splash.png",
       "resizeMode": "contain"
     },
     "runtimeVersion": "1.0.0",
@@ -30,7 +30,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/inv-splash.svg",
+        "foregroundImage": "./assets/images/inv-splash.png",
         "backgroundColor": "#3B82F6"
       },
       "package": "com.halvestor.app",
@@ -40,14 +40,14 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/inv-splash.svg"
+      "favicon": "./assets/images/inv-splash.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/inv-splash.svg",
+          "image": "./assets/images/inv-splash.png",
           "imageWidth": 120,
           "resizeMode": "contain",
           "backgroundColor": "#3B82F6"
