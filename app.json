@@ -25,7 +25,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.halvestor.app",
+      "bundleIdentifier": "com.halvestor.app2",
       "buildNumber": "1"
     },
     "android": {
@@ -33,7 +33,7 @@
         "foregroundImage": "./assets/images/inv-splash.png",
         "backgroundColor": "#3B82F6"
       },
-      "package": "com.halvestor.app",
+      "package": "com.halvestor.app2",
       "versionCode": 1,
       "runtimeVersion": "1.0.0"
     },
