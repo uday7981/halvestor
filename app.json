@@ -8,6 +8,9 @@
     "scheme": "trading",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "developmentClient": {
+      "silentLaunch": false
+    },
     "androidStatusBar": {
       "translucent": true,
       "backgroundColor": "#00000000"
@@ -44,6 +47,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-dev-client",
       [
         "expo-splash-screen",
         {
