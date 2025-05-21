@@ -1,21 +1,79 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  SafeAreaView, 
+  KeyboardAvoidingView, 
+  Platform, 
+  ScrollView,
+  Alert
+} from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import AuthButton from '../components/AuthButton';
 import AuthInput from '../components/AuthInput';
+import { signInWithEmail } from '../services/authService';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({
+    email: '',
+    password: ''
+  });
   
-  const handleLogin = () => {
-    // Implement login logic here
-    console.log('Login with:', email, password);
-    // Navigate to get-started page on successful login
-    router.replace('/get-started');
+  const validateInputs = () => {
+    let isValid = true;
+    const newErrors = {
+      email: '',
+      password: ''
+    };
+    
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.trim()) {
+      newErrors.email = 'Email is required';
+      isValid = false;
+    } else if (!emailRegex.test(email)) {
+      newErrors.email = 'Please enter a valid email';
+      isValid = false;
+    }
+    
+    // Validate password
+    if (!password) {
+      newErrors.password = 'Password is required';
+      isValid = false;
+    }
+    
+    setErrors(newErrors);
+    return isValid;
+  };
+  
+  const handleLogin = async () => {
+    if (!validateInputs()) return;
+    
+    setLoading(true);
+    try {
+      // Call Supabase login function
+      const { data, error } = await signInWithEmail(email, password);
+      
+      if (error) {
+        Alert.alert('Login Error', error.message || 'Invalid email or password');
+        return;
+      }
+      
+      // Navigate to welcome page on successful login
+      router.replace('/welcome');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'An unexpected error occurred. Please try again.');
+      console.error('Login error:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBack = () => {
@@ -55,6 +113,7 @@ export default function Login() {
               placeholder="Enter your email"
               keyboardType="email-address"
               autoCapitalize="none"
+              error={errors.email}
             />
 
             <AuthInput
@@ -63,6 +122,7 @@ export default function Login() {
               onChangeText={setPassword}
               placeholder="Enter your password"
               secureTextEntry={true}
+              error={errors.password}
             />
 
             <TouchableOpacity 
@@ -73,9 +133,10 @@ export default function Login() {
             </TouchableOpacity>
 
             <AuthButton
-              title="Sign in"
+              title={loading ? "Signing in..." : "Sign in"}
               onPress={handleLogin}
-              disabled={!email || !password}
+              disabled={loading || !email || !password}
+              loading={loading}
               style={styles.loginButton}
             />
           </View>
@@ -102,100 +163,53 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingBottom: 24,
+    padding: 20,
   },
   backButton: {
-    marginTop: 16,
     width: 40,
     height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 20,
   },
   header: {
-    marginTop: 24,
-    marginBottom: 32,
+    marginBottom: 30,
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: 'bold',
     color: '#1E293B',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
     color: '#64748B',
-    lineHeight: 22,
+    lineHeight: 24,
   },
   form: {
-    width: '100%',
-  },
-  inputContainer: {
     marginBottom: 20,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#1E293B',
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#1E293B',
-  },
-  passwordInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-  },
-  passwordInput: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#1E293B',
-  },
-  eyeIcon: {
-    padding: 12,
   },
   forgotPasswordContainer: {
     alignSelf: 'flex-end',
-    marginBottom: 24,
+    marginTop: -10,
+    marginBottom: 20,
   },
   forgotPasswordText: {
     fontSize: 14,
+    color: '#2E7D32',
     fontWeight: '500',
-    color: '#3B82F6',
   },
   loginButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 100,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  loginButtonDisabled: {
-    backgroundColor: '#94A3B8',
-  },
-  loginButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+    marginBottom: 20,
   },
   signupContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
     marginTop: 'auto',
-    paddingTop: 24,
+    marginBottom: 20,
   },
   signupText: {
     fontSize: 14,
@@ -203,7 +217,7 @@ const styles = StyleSheet.create({
   },
   signupLink: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#3B82F6',
+    color: '#2E7D32',
+    fontWeight: '500',
   },
 });

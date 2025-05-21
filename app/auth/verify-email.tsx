@@ -8,11 +8,14 @@ import {
   TextInput, 
   KeyboardAvoidingView, 
   Platform, 
-  Keyboard
+  Keyboard,
+  Alert
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { verifyOTP } from '../services/authService';
+import AuthButton from '../components/AuthButton';
 
 export default function VerifyEmail() {
   const params = useLocalSearchParams();
@@ -22,6 +25,7 @@ export default function VerifyEmail() {
   const [timer, setTimer] = useState(30);
   const [isResending, setIsResending] = useState(false);
   const [isTimerRunning, setIsTimerRunning] = useState(true);
+  const [isVerifying, setIsVerifying] = useState(false);
   
   const inputRefs = useRef<Array<TextInput | null>>([]);
   
@@ -83,15 +87,32 @@ export default function VerifyEmail() {
     router.back();
   };
   
-  const handleContinue = () => {
+  const handleContinue = async () => {
     // Check if OTP is complete
-    if (otp.every(digit => digit !== '')) {
+    if (!otp.every(digit => digit !== '')) {
+      Alert.alert('Error', 'Please enter the complete verification code');
+      return;
+    }
+    
+    setIsVerifying(true);
+    try {
+      const otpString = otp.join('');
+      const { data, error } = await verifyOTP(email, otpString);
+      
+      if (error) {
+        Alert.alert('Verification Error', error.message || 'Invalid verification code');
+        return;
+      }
+      
       // Navigate to user profile page on successful verification
       router.push('/auth/user-profile');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'An unexpected error occurred. Please try again.');
+      console.error('OTP verification error:', error);
+    } finally {
+      setIsVerifying(false);
     }
   };
-  
-  const isOtpComplete = otp.every(digit => digit !== '');
   
   return (
     <SafeAreaView style={styles.container}>
@@ -106,9 +127,9 @@ export default function VerifyEmail() {
         </TouchableOpacity>
         
         <View style={styles.header}>
-          <Text style={styles.title}>Verify your email address</Text>
+          <Text style={styles.title}>Verify your email</Text>
           <Text style={styles.subtitle}>
-            We've sent a 6 digit-code to your email address that you provided in the previous step.
+            We've sent a verification code to {email}
           </Text>
         </View>
         
@@ -116,46 +137,41 @@ export default function VerifyEmail() {
           {otp.map((digit, index) => (
             <TextInput
               key={index}
-              ref={ref => inputRefs.current[index] = ref}
+              ref={(ref) => inputRefs.current[index] = ref}
               style={styles.otpInput}
               value={digit}
-              onChangeText={text => handleOtpChange(text, index)}
-              onKeyPress={e => handleKeyPress(e, index)}
+              onChangeText={(text) => handleOtpChange(text, index)}
+              onKeyPress={(e) => handleKeyPress(e, index)}
               keyboardType="number-pad"
               maxLength={1}
               autoFocus={index === 0}
-              selectionColor="#3B82F6"
+              selectTextOnFocus
             />
           ))}
         </View>
         
-        <TouchableOpacity 
-          style={styles.resendContainer} 
-          onPress={handleResendCode}
-          disabled={isTimerRunning || isResending}
-        >
-          <Text style={styles.resendText}>
-            Didn't receive the code? {' '}
-            {isResending ? (
-              <Text style={styles.resendingText}>Resending...</Text>
-            ) : isTimerRunning ? (
-              <Text style={styles.timerText}>Resend in {timer}:00</Text>
-            ) : (
-              <Text style={styles.resendLink}>Resend</Text>
-            )}
-          </Text>
-        </TouchableOpacity>
-        
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity 
-            style={[styles.continueButton, !isOtpComplete && styles.continueButtonDisabled]} 
-            onPress={handleContinue}
-            disabled={!isOtpComplete}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.continueButtonText}>Continue</Text>
-          </TouchableOpacity>
+        <View style={styles.resendContainer}>
+          {isTimerRunning ? (
+            <Text style={styles.timerText}>Resend code in {timer}s</Text>
+          ) : (
+            <TouchableOpacity 
+              onPress={handleResendCode}
+              disabled={isResending}
+            >
+              <Text style={[styles.resendText, isResending && styles.resendTextDisabled]}>
+                {isResending ? 'Sending...' : 'Resend code'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
+        
+        <AuthButton
+          title={isVerifying ? "Verifying..." : "Continue"}
+          onPress={handleContinue}
+          disabled={isVerifying || !otp.every(digit => digit !== '')}
+          loading={isVerifying}
+          style={styles.continueButton}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -165,43 +181,45 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    padding: 20,
   },
   keyboardAvoidView: {
     flex: 1,
-    paddingHorizontal: 24,
   },
   backButton: {
-    marginTop: 16,
     width: 40,
     height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   header: {
-    marginTop: 16,
-    marginBottom: 48,
+    marginBottom: 40,
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
     color: '#64748B',
-    lineHeight: 22,
+    lineHeight: 24,
   },
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 32,
+    marginBottom: 30,
   },
   otpInput: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F1F5F9',
+    width: 48,
+    height: 56,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
     textAlign: 'center',
     fontSize: 20,
     fontWeight: '600',
@@ -209,40 +227,21 @@ const styles = StyleSheet.create({
   },
   resendContainer: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 30,
   },
-  resendText: {
+  timerText: {
     fontSize: 14,
     color: '#64748B',
   },
-  resendLink: {
-    color: '#3B82F6',
-    fontWeight: '600',
-  },
-  timerText: {
-    color: '#94A3B8',
+  resendText: {
+    fontSize: 14,
+    color: '#2E7D32',
     fontWeight: '500',
   },
-  resendingText: {
+  resendTextDisabled: {
     color: '#94A3B8',
-    fontWeight: '500',
-  },
-  buttonContainer: {
-    marginTop: 'auto',
-    marginBottom: 24,
   },
   continueButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 100,
-    paddingVertical: 16,
-    alignItems: 'center',
-  },
-  continueButtonDisabled: {
-    backgroundColor: '#94A3B8',
-  },
-  continueButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+    marginTop: 'auto',
   },
 });

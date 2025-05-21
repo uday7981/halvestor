@@ -1,24 +1,88 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, SafeAreaView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, SafeAreaView, Platform, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import Header from './components/Header';
 import { Svg, Path } from 'react-native-svg';
-
-// Using the shared Header component instead of a custom ProfileAvatar
+import { supabase } from './config/supabase';
+import { signOut } from './services/authService';
 
 export default function Welcome() {
-  const handleGetStarted = () => {
-    // Navigate to the main app's portfolio/holdings page
-    router.navigate('/(tabs)');
+  const [loading, setLoading] = useState(true);
+  const [firstName, setFirstName] = useState('');
+  const [avatarInitials, setAvatarInitials] = useState('');  
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, []);
+
+  const fetchUserProfile = async () => {
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        // If no user, redirect to auth
+        router.replace('/auth');
+        return;
+      }
+      
+      // Get user profile
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('first_name, last_name')
+        .eq('id', user.id)
+        .single();
+      
+      if (profile) {
+        setFirstName(profile.first_name || '');
+        
+        // Generate avatar initials
+        let initials = '';
+        if (profile.first_name) initials += profile.first_name[0];
+        if (profile.last_name) initials += profile.last_name[0];
+        setAvatarInitials(initials.toUpperCase());
+      }
+    } catch (error) {
+      console.error('Error fetching profile:', error);
+    } finally {
+      setLoading(false);
+    }
   };
+  
+  const handleGetStarted = async () => {
+    // Update first_login to false
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('profiles')
+          .update({ first_login: false })
+          .eq('id', user.id);
+      }
+      
+      // Navigate to the main app's portfolio/holdings page
+      router.navigate('/(tabs)');
+    } catch (error) {
+      console.error('Error updating first login status:', error);
+      router.navigate('/(tabs)');
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#2E7D32" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" translucent backgroundColor="transparent" />
 
       {/* Header */}
-      <Header username="Uday" avatarInitials="AC" />
+      <Header username={firstName} avatarInitials={avatarInitials} />
 
       {/* Main Card */}
       <View style={styles.card}>
@@ -51,9 +115,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'ios' ? 50 : 8,
   },
-  // Header styles moved to the Header component
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   card: {
     marginHorizontal: 16,
     marginTop: 20,

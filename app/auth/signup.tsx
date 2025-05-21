@@ -1,25 +1,114 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, KeyboardAvoidingView, Platform, ScrollView, TextInput, Pressable } from 'react-native';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  SafeAreaView, 
+  KeyboardAvoidingView, 
+  Platform, 
+  ScrollView, 
+  TextInput, 
+  Alert 
+} from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import AuthButton from '../components/AuthButton';
+import { signUpWithEmail } from '../services/authService';
 
 export default function Signup() {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [country, setCountry] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+    country: ''
+  });
   
-  const handleContinue = () => {
-    // Implement signup logic here
-    console.log('Signup with:', country, email, password);
-    // Navigate to email verification screen
-    router.push({
-      pathname: '/auth/verify-email',
-      params: { email }
-    });
+  const validateInputs = () => {
+    let isValid = true;
+    const newErrors = {
+      firstName: '',
+      lastName: '',
+      email: '',
+      password: '',
+      country: ''
+    };
+    
+    // Validate first name
+    if (!firstName.trim()) {
+      newErrors.firstName = 'First name is required';
+      isValid = false;
+    }
+    
+    // Validate last name
+    if (!lastName.trim()) {
+      newErrors.lastName = 'Last name is required';
+      isValid = false;
+    }
+    
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email.trim()) {
+      newErrors.email = 'Email is required';
+      isValid = false;
+    } else if (!emailRegex.test(email)) {
+      newErrors.email = 'Please enter a valid email';
+      isValid = false;
+    }
+    
+    // Validate password
+    if (!password) {
+      newErrors.password = 'Password is required';
+      isValid = false;
+    } else if (password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+      isValid = false;
+    }
+    
+    // Validate country
+    if (!country) {
+      newErrors.country = 'Please select your country';
+      isValid = false;
+    }
+    
+    setErrors(newErrors);
+    return isValid;
+  };
+  
+  const handleContinue = async () => {
+    if (!validateInputs()) return;
+    
+    setLoading(true);
+    try {
+      // Call Supabase signup function
+      const { data, error } = await signUpWithEmail(email, password, firstName, lastName);
+      
+      if (error) {
+        Alert.alert('Signup Error', error.message || 'An error occurred during signup');
+        return;
+      }
+      
+      // Navigate to email verification screen
+      router.push({
+        pathname: '/auth/verify-email',
+        params: { email }
+      });
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'An unexpected error occurred. Please try again.');
+      console.error('Signup error:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleBack = () => {
@@ -51,11 +140,43 @@ export default function Signup() {
           </View>
 
           <View style={styles.form}>
+            {/* First Name Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>First name</Text>
+              <TextInput
+                style={[styles.input, errors.firstName ? styles.inputError : null]}
+                placeholder="Enter your first name"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="words"
+                value={firstName}
+                onChangeText={setFirstName}
+              />
+              {errors.firstName ? (
+                <Text style={styles.errorText}>{errors.firstName}</Text>
+              ) : null}
+            </View>
+            
+            {/* Last Name Input */}
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Last name</Text>
+              <TextInput
+                style={[styles.input, errors.lastName ? styles.inputError : null]}
+                placeholder="Enter your last name"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="words"
+                value={lastName}
+                onChangeText={setLastName}
+              />
+              {errors.lastName ? (
+                <Text style={styles.errorText}>{errors.lastName}</Text>
+              ) : null}
+            </View>
+            
             {/* Country Dropdown */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Country</Text>
               <TouchableOpacity 
-                style={styles.dropdownContainer}
+                style={[styles.dropdownContainer, errors.country ? styles.inputError : null]}
                 onPress={() => setShowCountryDropdown(!showCountryDropdown)}
                 activeOpacity={0.7}
               >
@@ -84,13 +205,16 @@ export default function Signup() {
                   ))}
                 </View>
               )}
+              {errors.country ? (
+                <Text style={styles.errorText}>{errors.country}</Text>
+              ) : null}
             </View>
 
             {/* Email Input */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Email address</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, errors.email ? styles.inputError : null]}
                 placeholder="Enter your email"
                 placeholderTextColor="#94A3B8"
                 keyboardType="email-address"
@@ -98,23 +222,27 @@ export default function Signup() {
                 value={email}
                 onChangeText={setEmail}
               />
+              {errors.email ? (
+                <Text style={styles.errorText}>{errors.email}</Text>
+              ) : null}
             </View>
 
             {/* Password Input */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Password</Text>
-              <View style={styles.passwordContainer}>
+              <View style={[styles.passwordContainer, errors.password ? styles.inputError : null]}>
                 <TextInput
                   style={styles.passwordInput}
-                  placeholder="Create a secure password"
+                  placeholder="Create a password"
                   placeholderTextColor="#94A3B8"
                   secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={setPassword}
                 />
                 <TouchableOpacity 
-                  style={styles.eyeIcon} 
+                  style={styles.eyeIcon}
                   onPress={togglePasswordVisibility}
+                  activeOpacity={0.7}
                 >
                   <Ionicons 
                     name={showPassword ? "eye-off-outline" : "eye-outline"} 
@@ -123,33 +251,40 @@ export default function Signup() {
                   />
                 </TouchableOpacity>
               </View>
+              {errors.password ? (
+                <Text style={styles.errorText}>{errors.password}</Text>
+              ) : null}
             </View>
 
             {/* Password Hint */}
             <View style={styles.passwordHintContainer}>
-              <Text style={styles.passwordHintTitle}>Password Hint:</Text>
-              <Text style={styles.passwordHintText}>
-                Use <Text style={styles.passwordHintBold}>at least 8 characters</Text>, including <Text style={styles.passwordHintBold}>a letter</Text> and <Text style={styles.passwordHintBold}>a number</Text>.
+              <Text style={styles.passwordHint}>
+                Password must be at least 6 characters
               </Text>
             </View>
 
-            {/* Continue Button */}
-            <TouchableOpacity 
-              style={styles.continueButton} 
+            <AuthButton
+              title={loading ? "Creating account..." : "Continue"}
               onPress={handleContinue}
-              disabled={!country || !email || !password}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.continueButtonText}>Continue</Text>
-            </TouchableOpacity>
+              disabled={loading || !firstName || !lastName || !email || !password || !country}
+              loading={loading}
+              style={styles.buttonContainer}
+            />
           </View>
 
-          {/* Terms of Use */}
           <View style={styles.termsContainer}>
             <Text style={styles.termsText}>
-              By continuing, you accept our{' '}
-              <Text style={styles.termsLink}>Terms of Use</Text>
+              By continuing, you agree to our{' '}
+              <Text style={styles.termsLink}>Terms of Service</Text> and{' '}
+              <Text style={styles.termsLink}>Privacy Policy</Text>
             </Text>
+          </View>
+
+          <View style={styles.signupContainer}>
+            <Text style={styles.signupText}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => router.push('/auth/login')}>
+              <Text style={styles.signupLink}>Sign in</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -162,68 +297,74 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  inputError: {
+    borderColor: '#EF4444',
+  },
   keyboardAvoidView: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingBottom: 24,
+    padding: 20,
   },
   backButton: {
-    marginTop: 16,
     width: 40,
     height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   header: {
-    marginTop: 16,
-    marginBottom: 32,
+    marginBottom: 30,
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: 'bold',
     color: '#1E293B',
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
     color: '#64748B',
-    lineHeight: 22,
+    lineHeight: 24,
   },
   form: {
-    width: '100%',
+    marginBottom: 20,
   },
   inputGroup: {
-    marginBottom: 24,
+    marginBottom: 20,
   },
   inputLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '500',
     color: '#1E293B',
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    height: 50,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 12,
+    borderRadius: 8,
     paddingHorizontal: 16,
-    paddingVertical: 16,
     fontSize: 16,
     color: '#1E293B',
   },
   dropdownContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    height: 50,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 12,
+    borderRadius: 8,
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   dropdownText: {
     fontSize: 16,
@@ -233,95 +374,77 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
   },
   dropdownList: {
-    position: 'absolute',
-    top: 80,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
+    marginTop: 4,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 12,
-    zIndex: 1000,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    maxHeight: 200,
+    overflow: 'hidden',
   },
   dropdownItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#E2E8F0',
   },
   dropdownItemText: {
     fontSize: 16,
     color: '#1E293B',
   },
   passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    height: 50,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderRadius: 12,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   passwordInput: {
     flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
     fontSize: 16,
     color: '#1E293B',
   },
   eyeIcon: {
-    padding: 16,
+    padding: 8,
   },
   passwordHintContainer: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 32,
+    marginTop: -10,
+    marginBottom: 20,
   },
-  passwordHintTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-    marginBottom: 4,
-  },
-  passwordHintText: {
-    fontSize: 14,
+  passwordHint: {
+    fontSize: 12,
     color: '#64748B',
-    lineHeight: 20,
   },
-  passwordHintBold: {
-    fontWeight: '600',
-    color: '#475569',
-  },
-  continueButton: {
-    backgroundColor: '#3B82F6',
-    borderRadius: 100,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 24,
-  },
-  continueButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
+  buttonContainer: {
+    marginTop: 10,
   },
   termsContainer: {
-    marginTop: 'auto',
-    paddingTop: 24,
-    alignItems: 'center',
+    marginBottom: 20,
   },
   termsText: {
     fontSize: 14,
     color: '#64748B',
     textAlign: 'center',
+    lineHeight: 20,
   },
   termsLink: {
-    color: '#3B82F6',
+    color: '#2E7D32',
+    fontWeight: '500',
+  },
+  signupContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  signupText: {
+    fontSize: 14,
+    color: '#64748B',
+  },
+  signupLink: {
+    fontSize: 14,
+    color: '#2E7D32',
     fontWeight: '500',
   },
 });
