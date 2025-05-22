@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import { View, Text, StyleSheet, Image, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 type StockItemProps = {
@@ -11,6 +11,7 @@ type StockItemProps = {
   changePercent: string;
   isPositive: boolean;
   isCompliant: boolean;
+  onPress?: () => void;
 };
 
 const StockItem = ({
@@ -22,17 +23,18 @@ const StockItem = ({
   changePercent,
   isPositive,
   isCompliant,
+  onPress,
 }: StockItemProps) => {
-  return (
+  const content = (
     <View style={styles.container}>
       <View style={styles.leftSection}>
         {logo ? (
-        <Image source={logo} style={styles.logo} />
-      ) : (
-        <View style={[styles.logo, styles.logoPlaceholder]}>
-          <Text style={styles.logoInitial}>{name.charAt(0)}</Text>
-        </View>
-      )}
+          <Image source={logo} style={styles.logo} />
+        ) : (
+          <View style={[styles.logo, styles.logoPlaceholder]}>
+            <Text style={styles.logoInitial}>{name.charAt(0)}</Text>
+          </View>
+        )}
         <View style={styles.nameContainer}>
           <Text style={styles.name}>{name}</Text>
           <View style={styles.tickerContainer}>
@@ -62,6 +64,16 @@ const StockItem = ({
       </View>
     </View>
   );
+  
+  if (onPress) {
+    return (
+      <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+        {content}
+      </TouchableOpacity>
+    );
+  }
+  
+  return content;
 };
 
 const styles = StyleSheet.create({

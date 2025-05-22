@@ -1,5 +1,8 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { router } from 'expo-router';
+import { getUserOrders, Order } from '../services/orderService';
+import { formatDate } from '../utils/formatters';
 
 // Will be replaced with actual logos from Supabase later
 
@@ -60,53 +63,129 @@ const TransactionItem = ({
 
 type RecentTransactionsProps = {
   onSeeAll?: () => void;
+  refreshTrigger?: number; // Optional prop to trigger refresh from parent
 };
 
-const RecentTransactions = ({ onSeeAll }: RecentTransactionsProps) => {
+const RecentTransactions = ({ onSeeAll, refreshTrigger = 0 }: RecentTransactionsProps) => {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Fetch user orders
+  const fetchOrders = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const { data, error } = await getUserOrders();
+      
+      if (error) {
+        throw new Error(error);
+      }
+      
+      setOrders(data || []);
+    } catch (err) {
+      console.error('Error fetching orders:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Fetch orders on initial load and when refreshTrigger changes
+  useEffect(() => {
+    fetchOrders();
+  }, [refreshTrigger]);
+  
+  // Handle see all press
+  const handleSeeAll = () => {
+    if (onSeeAll) {
+      onSeeAll();
+    } else {
+      router.push('/portfolio' as any);
+    }
+  };
+  
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Recent Transactions</Text>
+          <Text style={styles.subtitle}>Loading...</Text>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#3B82F6" />
+        </View>
+      </View>
+    );
+  }
+  
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Recent Transactions</Text>
+          <Text style={styles.subtitle}>Error loading</Text>
+        </View>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Could not load transactions</Text>
+          <TouchableOpacity onPress={fetchOrders}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+  
+  if (orders.length === 0) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Recent Transactions</Text>
+          <Text style={styles.subtitle}>No transactions</Text>
+        </View>
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>You don't have any transactions yet</Text>
+        </View>
+      </View>
+    );
+  }
+  
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Recent transactions</Text>
+        <Text style={styles.title}>Recent Transactions</Text>
+        <TouchableOpacity onPress={handleSeeAll}>
+          <Text style={styles.seeAllText}>See all</Text>
+        </TouchableOpacity>
       </View>
-      
-      <TransactionItem 
-        logo={null}
-        action="Buy"
-        stockName="NVIDIA"
-        date="02/16/2024"
-        shares="4"
-        price="119.03"
-        amount="107.57"
-        time="12:45pm"
-      />
-      
-      <TransactionItem 
-        logo={null}
-        action="Sell"
-        stockName="Tesla"
-        date="02/16/2024"
-        shares="2"
-        price="178.93"
-        amount="4.90"
-        time="12:40pm"
-      />
-      
-      <TransactionItem 
-        logo={null}
-        action="Buy"
-        stockName="Amazon"
-        date="02/16/2024"
-        shares="3"
-        price="178.93"
-        amount="17.28"
-        time="12:40pm"
-      />
-      
-      <TouchableOpacity 
-        style={styles.seeAllButton} 
-        onPress={onSeeAll}
-      >
-        <Text style={styles.seeAllText}>See all</Text>
+
+      {orders.slice(0, 3).map((order) => {
+        const action = order.transaction_type === 'buy' ? 'Buy' : 'Sell';
+        const stockName = order.stock?.name || 'Unknown Stock';
+        const date = order.created_at ? formatDate(order.created_at) : 'Unknown date';
+        const shares = order.quantity.toString();
+        const price = order.price_per_share.toFixed(2);
+        const amount = `$${(order.quantity * order.price_per_share).toFixed(2)}`;
+        const time = order.created_at ? new Date(order.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        
+        return (
+          <TransactionItem
+            key={order.id}
+            logo={null}
+            action={action}
+            stockName={stockName}
+            date={date}
+            shares={shares}
+            price={price}
+            amount={amount}
+            time={time}
+          />
+        );
+      })}
+
+      <TouchableOpacity style={styles.viewAllButton} onPress={handleSeeAll}>
+        <Text style={styles.viewAllText}>View all transactions</Text>
       </TouchableOpacity>
     </View>
   );
@@ -123,29 +202,23 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowRadius: 4,
     elevation: 2,
-  },
-  logoPlaceholder: {
-    backgroundColor: '#E2E8F0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoInitial: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#64748B',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#0F172A',
+    color: '#111827',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#6B7280',
   },
   transactionItem: {
     flexDirection: 'row',
@@ -153,47 +226,101 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#F3F4F6',
   },
   leftSection: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   transactionLogo: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     marginRight: 12,
-    backgroundColor: '#F1F5F9',
+  },
+  logoPlaceholder: {
+    backgroundColor: '#E5E7EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoInitial: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6B7280',
   },
   transactionTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '500',
-    color: '#0F172A',
+    color: '#111827',
+    marginBottom: 4,
   },
   transactionSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+    fontSize: 14,
+    color: '#6B7280',
   },
   rightSection: {
     alignItems: 'flex-end',
   },
   transactionAmount: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
   },
   transactionTime: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#DC2626',
+    marginBottom: 8,
+  },
+  retryText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#3B82F6',
+  },
+  emptyContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#6B7280',
   },
   seeAllButton: {
-    alignItems: 'center',
-    paddingVertical: 12,
-    marginTop: 8,
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    alignSelf: 'center',
+  },
+  viewAllButton: {
+    marginTop: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    alignSelf: 'center',
   },
   seeAllText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#3B82F6',
+  },
+  viewAllText: {
     fontSize: 14,
     fontWeight: '500',
     color: '#3B82F6',

@@ -1,46 +1,123 @@
-import { View, Text, SafeAreaView, FlatList, StyleSheet, Platform } from 'react-native';
-import React, { useState, useEffect } from 'react';
+import { View, Text, SafeAreaView, FlatList, StyleSheet, Platform, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import WatchlistSearchBar from '../components/WatchlistSearchBar';
 import WatchlistStockItem, { WatchlistStockItemProps } from '../components/WatchlistStockItem';
 import ComplianceFilter, { ComplianceFilterType } from '../components/ComplianceFilter';
-
-const watchlistData: WatchlistStockItemProps[] = [
-  { symbol: 'GOOGL', name: 'Alphabet Inc.', price: '2,650.78', change: '81.98', changePercent: '3.7', isPositive: false, isCompliant: true },
-  { symbol: 'AAPL', name: 'Apple Inc.', price: '168.88', change: '3.67', changePercent: '2.13', isPositive: true, isCompliant: true },
-  { symbol: 'AMZN', name: 'Amazon', price: '159.22', change: '14.72', changePercent: '2.8', isPositive: false, isCompliant: false },
-  { symbol: 'NVDA', name: 'Nvidia', price: '290.73', change: '8.77', changePercent: '3.0', isPositive: false, isCompliant: true },
-  { symbol: 'SPOT', name: 'Spotify Inc.', price: '189.47', change: '4.72', changePercent: '1.9', isPositive: true, isCompliant: true },
-  { symbol: 'MSFT', name: 'Microsoft Corp.', price: '293.25', change: '2.37', changePercent: '2.0', isPositive: false, isCompliant: false },
-  { symbol: 'TSLA', name: 'Tesla', price: '254.11', change: '249.19', changePercent: '1.94', isPositive: true, isCompliant: true },
-  { symbol: 'FIGM', name: 'Figma', price: '95.29', change: '14.72', changePercent: '2.8', isPositive: false, isCompliant: false },
-];
-
-
+import { getWatchlistItems, Stock, removeFromWatchlist } from '../services/stockService';
+import { formatCurrency } from '../utils/formatters';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function Watchlist() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredStocks, setFilteredStocks] = useState(watchlistData);
-  const [complianceFilter, setComplianceFilter] = useState<ComplianceFilterType>('compliant');
+  const [stocks, setStocks] = useState<WatchlistStockItemProps[]>([]);
+  const [filteredStocks, setFilteredStocks] = useState<WatchlistStockItemProps[]>([]);
+  const [complianceFilter, setComplianceFilter] = useState<ComplianceFilterType>('all');
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Function to map database stocks to UI format
+  const mapStocksToUI = (stocks: Stock[]): WatchlistStockItemProps[] => {
+    return stocks.map(stock => {
+      const isPositive = stock.change_percent ? stock.change_percent >= 0 : false;
+      const changeValue = stock.price && stock.change_percent ? 
+        (stock.price * stock.change_percent / 100).toFixed(2) : '0.00';
+      
+      return {
+        id: stock.id,
+        symbol: stock.ticker,
+        name: stock.name,
+        price: formatCurrency(stock.price || 0),
+        change: changeValue,
+        changePercent: stock.change_percent ? stock.change_percent.toFixed(2) : '0.00',
+        isPositive,
+        isCompliant: stock.is_compliant
+      };
+    });
+  };
+  
+  // Fetch watchlist data
+  const fetchWatchlistStocks = useCallback(async (isRefreshing = false) => {
+    if (isRefreshing) {
+      setRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+    
+    try {
+      const { data, error } = await getWatchlistItems();
+      
+      if (error) {
+        throw new Error(error);
+      }
+      
+      if (data) {
+        const formattedStocks = mapStocksToUI(data);
+        setStocks(formattedStocks);
+        // Initial filtering will be applied in the useEffect
+      } else {
+        setStocks([]);
+      }
+      
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching watchlist stocks:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load watchlist data');
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+  
+  // Handle pull-to-refresh
+  const onRefresh = useCallback(() => {
+    fetchWatchlistStocks(true);
+  }, [fetchWatchlistStocks]);
+  
+  // Initial data fetch
+  useEffect(() => {
+    fetchWatchlistStocks();
+    
+    // Set up a refresh interval (every 5 minutes)
+    const refreshInterval = setInterval(() => {
+      fetchWatchlistStocks(true);
+    }, 5 * 60 * 1000);
+    
+    return () => clearInterval(refreshInterval);
+  }, [fetchWatchlistStocks]);
+  
+  // Refresh data when the screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('Watchlist screen focused - refreshing data');
+      fetchWatchlistStocks(true);
+      return () => {};
+    }, [fetchWatchlistStocks])
+  );
+
+  // Apply filters when stocks or filter criteria change
+  useEffect(() => {
+    applyFilters(searchQuery, complianceFilter);
+  }, [stocks, searchQuery, complianceFilter]);
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    applyFilters(text, complianceFilter);
   };
 
   const handleFilterChange = (filter: ComplianceFilterType) => {
     setComplianceFilter(filter);
-    applyFilters(searchQuery, filter);
   };
 
   const applyFilters = (query: string, filter: ComplianceFilterType) => {
-    let filtered = watchlistData;
+    let filtered = [...stocks];
     
     // Apply search filter
     if (query.trim() !== '') {
       filtered = filtered.filter(
-        stock => 
+        (stock) => 
           stock.name.toLowerCase().includes(query.toLowerCase()) ||
           stock.symbol.toLowerCase().includes(query.toLowerCase())
       );
@@ -48,9 +125,9 @@ export default function Watchlist() {
     
     // Apply compliance filter
     if (filter === 'compliant') {
-      filtered = filtered.filter(stock => stock.isCompliant);
+      filtered = filtered.filter((stock) => stock.isCompliant);
     } else if (filter === 'non-compliant') {
-      filtered = filtered.filter(stock => !stock.isCompliant);
+      filtered = filtered.filter((stock) => !stock.isCompliant);
     }
     
     setFilteredStocks(filtered);
@@ -66,11 +143,6 @@ export default function Watchlist() {
       onPress={() => handleStockPress(item.symbol)}
     />
   );
-
-  // Apply initial filters
-  useEffect(() => {
-    applyFilters(searchQuery, complianceFilter);
-  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -93,18 +165,57 @@ export default function Watchlist() {
         onFilterChange={handleFilterChange}
       />
       
-      {filteredStocks.length > 0 ? (
+      {isLoading && !refreshing ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#10B981" />
+          <Text style={styles.loadingText}>Loading your watchlist...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => fetchWatchlistStocks()}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : stocks.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="heart-outline" size={48} color="#94A3B8" />
+          <Text style={styles.emptyTitle}>Your watchlist is empty</Text>
+          <Text style={styles.emptyText}>Add stocks to your watchlist by tapping the heart icon on any stock details page</Text>
+          <TouchableOpacity 
+            style={styles.exploreButton}
+            onPress={() => router.push('/explore')}
+          >
+            <Text style={styles.exploreButtonText}>Explore Stocks</Text>
+          </TouchableOpacity>
+        </View>
+      ) : filteredStocks.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="search-outline" size={48} color="#94A3B8" />
+          <Text style={styles.emptyText}>No stocks match your filters</Text>
+        </View>
+      ) : (
         <FlatList
           data={filteredStocks}
           renderItem={renderStockItem}
-          keyExtractor={item => item.symbol}
+          keyExtractor={item => item.id || item.symbol}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#10B981', '#3B82F6']} 
+              tintColor="#10B981" 
+              title="Pull to refresh..."
+              titleColor="#64748B" 
+            />
+          }
         />
-      ) : (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No stocks match your filters</Text>
-        </View>
       )}
     </SafeAreaView>
   );
@@ -150,10 +261,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 100,
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: 16,
     color: '#64748B',
-    marginBottom: 16,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  exploreButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  exploreButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#64748B',
+    marginTop: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#EF4444',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: '#EF4444',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

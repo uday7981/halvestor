@@ -1,9 +1,11 @@
-import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image } from 'react-native';
-import React, { useState } from 'react';
+import { View, Text, StyleSheet, SafeAreaView, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import SimpleStockChart from '../components/SimpleStockChart';
+import { getStockByTicker, Stock, addToWatchlist, removeFromWatchlist, isInWatchlist } from '../services/stockService';
+import { formatCurrency, formatLargeNumber, formatDate } from '../utils/formatters';
 
 // Define timeframe type
 type TimeframeOption = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | 'All';
@@ -24,24 +26,39 @@ const AnalystRatingBar = ({ percentage, color }: { percentage: number; color: st
 
 const StockDetails = () => {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const [stock, setStock] = useState<Stock | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTimeframe, setActiveTimeframe] = useState<TimeframeOption>('1m');
   
-  // Get stock data based on id
-  const getStockData = () => {
-    // This would be replaced with an API call in a real app
-    const stockData = {
-      AAPL: { name: 'Apple Inc.', price: '168.88', symbol: 'AAPL', shares: '10', isCompliant: true },
-      GOOGL: { name: 'Alphabet Inc.', price: '2,650.78', symbol: 'GOOGL', shares: '5', isCompliant: true },
-      AMZN: { name: 'Amazon', price: '159.22', symbol: 'AMZN', shares: '15', isCompliant: false },
-      NVDA: { name: 'Nvidia', price: '290.73', symbol: 'NVDA', shares: '8', isCompliant: true },
-      MSFT: { name: 'Microsoft Corp.', price: '293.25', symbol: 'MSFT', shares: '12', isCompliant: false },
-      TSLA: { name: 'Tesla', price: '254.11', symbol: 'TSLA', shares: '20', isCompliant: true },
+  // Fetch stock data from the database
+  useEffect(() => {
+    const fetchStockData = async () => {
+      if (!id) return;
+      
+      try {
+        setLoading(true);
+        const { data, error } = await getStockByTicker(id as string);
+        
+        if (error) {
+          throw new Error(error);
+        }
+        
+        if (data) {
+          setStock(data);
+        } else {
+          setError('Stock not found');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load stock data');
+        console.error('Error fetching stock:', err);
+      } finally {
+        setLoading(false);
+      }
     };
     
-    return stockData[id as keyof typeof stockData] || { name: 'Apple Inc.', price: '168.88', symbol: 'AAPL', shares: '10', isCompliant: true };
-  };
-  
-  const stockData = getStockData();
-  const [activeTimeframe, setActiveTimeframe] = useState<TimeframeOption>('1m');
+    fetchStockData();
+  }, [id]);
   
   const handleBack = () => {
     router.back();
@@ -51,10 +68,111 @@ const StockDetails = () => {
     console.log('Share stock');
   };
   
-  const handleFavorite = () => {
-    console.log('Add to favorites');
+  const [isWatchlisted, setIsWatchlisted] = useState(false);
+  
+  // Check if stock is in watchlist
+  useEffect(() => {
+    const checkWatchlistStatus = async () => {
+      if (!stock) return;
+      
+      try {
+        const { isWatchlisted, error } = await isInWatchlist(stock.id);
+        if (error) {
+          console.error('Error checking watchlist status:', error);
+          return;
+        }
+        
+        setIsWatchlisted(isWatchlisted);
+      } catch (err) {
+        console.error('Error checking watchlist status:', err);
+      }
+    };
+    
+    checkWatchlistStatus();
+  }, [stock]);
+  
+  const handleFavorite = async () => {
+    if (!stock) return;
+    
+    try {
+      if (isWatchlisted) {
+        // Remove from watchlist
+        const { success, error } = await removeFromWatchlist(stock.id);
+        if (error) {
+          console.error('Error removing from watchlist:', error);
+          return;
+        }
+        
+        if (success) {
+          setIsWatchlisted(false);
+        }
+      } else {
+        // Add to watchlist
+        const { success, error } = await addToWatchlist(stock.id);
+        if (error) {
+          console.error('Error adding to watchlist:', error);
+          return;
+        }
+        
+        if (success) {
+          setIsWatchlisted(true);
+        }
+      }
+    } catch (err) {
+      console.error('Error updating watchlist:', err);
+    }
   };
   
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="dark" />
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <View style={styles.backButtonCircle}>
+              <Ionicons name="chevron-back" size={20} color="#1E293B" />
+            </View>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Loading...</Text>
+          <View style={styles.headerActions}></View>
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#10B981" />
+          <Text style={styles.loadingText}>Loading stock data...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error || !stock) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="dark" />
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+            <View style={styles.backButtonCircle}>
+              <Ionicons name="chevron-back" size={20} color="#1E293B" />
+            </View>
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Error</Text>
+          <View style={styles.headerActions}></View>
+        </View>
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
+          <Text style={styles.errorText}>{error || 'Failed to load stock data'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => router.back()}>
+            <Text style={styles.retryButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Calculate if price change is positive
+  const isPositive = stock.change_percent ? stock.change_percent >= 0 : true;
+  const changeIcon = isPositive ? "arrow-up" : "arrow-down";
+  const changeColor = isPositive ? "#10B981" : "#EF4444";
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="dark" />
@@ -66,14 +184,18 @@ const StockDetails = () => {
           </View>
         </TouchableOpacity>
         
-        <Text style={styles.headerTitle}>{stockData.name}</Text>
+        <Text style={styles.headerTitle}>{stock.name}</Text>
         
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
             <Ionicons name="share-outline" size={22} color="#1E293B" />
           </TouchableOpacity>
           <TouchableOpacity style={styles.actionButton} onPress={handleFavorite}>
-            <Ionicons name="heart-outline" size={22} color="#1E293B" />
+            <Ionicons 
+              name={isWatchlisted ? "heart" : "heart-outline"} 
+              size={22} 
+              color={isWatchlisted ? "#EF4444" : "#1E293B"} 
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -83,29 +205,36 @@ const StockDetails = () => {
         contentContainerStyle={styles.scrollContent}>
         <View style={styles.companyHeader}>
           <View style={styles.companyLogo}>
-            <Ionicons name={id === 'AAPL' ? "logo-apple" : "business-outline"} size={24} color="#000" />
+            <Ionicons name="business-outline" size={24} color="#000" />
           </View>
           <View style={styles.companyInfo}>
-            <Text style={styles.companyName}>{stockData.name}</Text>
-            <Text style={styles.companySymbol}>{stockData.symbol}</Text>
+            <Text style={styles.companyName}>{stock.name}</Text>
+            <Text style={styles.companySymbol}>{stock.ticker}</Text>
           </View>
         </View>
         
         <View style={styles.priceContainer}>
-          <Text style={styles.price}>${stockData.price}</Text>
+          <Text style={styles.price}>{formatCurrency(stock.price || 0)}</Text>
           <View style={styles.priceChangeContainer}>
-            <View style={styles.priceChangeIndicator}>
-              <Ionicons name="arrow-up" size={14} color="white" />
+            <View style={[styles.priceChangeIndicator, { backgroundColor: changeColor }]}>
+              <Ionicons name={changeIcon} size={14} color="white" />
             </View>
-            <Text style={styles.priceChange}>$1,150.34 (7%)</Text>
-            <Text style={styles.priceTime}>Today</Text>
+            <Text style={[styles.priceChange, { color: changeColor }]}>
+              {stock.change_percent ? `${stock.change_percent > 0 ? '+' : ''}${stock.change_percent.toFixed(2)}%` : 'N/A'}
+            </Text>
+            <Text style={styles.priceTime}>
+              {stock.last_updated ? formatDate(stock.last_updated) : 'No data'}
+            </Text>
           </View>
         </View>
         
         <Text style={styles.companyDescription}>
-          Apple is among the largest companies in the world, with a broad
-          portfolio of hardware and software products targeted at
-          consumers and businesses.
+          {typeof stock.about_stock === 'string' 
+            ? stock.about_stock 
+            : typeof stock.about_stock === 'object' && stock.about_stock?.description 
+              ? stock.about_stock.description 
+              : `${stock.name} (${stock.ticker}) is a publicly traded company in the ${stock.market} market.`
+          }
         </Text>
         
         <View style={styles.chartContainer}>
@@ -169,8 +298,17 @@ const StockDetails = () => {
           </View>
           
           <View style={styles.complianceStatus}>
-            <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-            <Text style={styles.complianceText}>APPL is Shariah Compliant!</Text>
+            {stock.is_compliant ? (
+              <>
+                <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                <Text style={styles.complianceText}>{stock.ticker} is Shariah Compliant!</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="close-circle" size={20} color="#EF4444" />
+                <Text style={styles.complianceText}>{stock.ticker} is not Shariah Compliant</Text>
+              </>
+            )}
           </View>
           
           <TouchableOpacity 
@@ -231,12 +369,12 @@ const StockDetails = () => {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Open</Text>
-              <Text style={styles.statValue}>169.82</Text>
+              <Text style={styles.statValue}>{stock.open ? formatCurrency(stock.open) : 'N/A'}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Mkt Cap</Text>
-              <Text style={styles.statValue}>3.11T</Text>
+              <Text style={styles.statLabel}>Volume</Text>
+              <Text style={styles.statValue}>{stock.volume ? formatLargeNumber(stock.volume) : 'N/A'}</Text>
             </View>
           </View>
           
@@ -245,12 +383,12 @@ const StockDetails = () => {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>High</Text>
-              <Text style={styles.statValue}>170.54</Text>
+              <Text style={styles.statValue}>{stock.high ? formatCurrency(stock.high) : 'N/A'}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>P/E ratio</Text>
-              <Text style={styles.statValue}>27.60</Text>
+              <Text style={styles.statLabel}>Market</Text>
+              <Text style={styles.statValue}>{stock.market || 'N/A'}</Text>
             </View>
           </View>
           
@@ -259,12 +397,12 @@ const StockDetails = () => {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Low</Text>
-              <Text style={styles.statValue}>166.23</Text>
+              <Text style={styles.statValue}>{stock.low ? formatCurrency(stock.low) : 'N/A'}</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
-              <Text style={styles.statLabel}>Div yield</Text>
-              <Text style={styles.statValue}>0.53</Text>
+              <Text style={styles.statLabel}>Last Updated</Text>
+              <Text style={styles.statValue}>{stock.last_updated ? formatDate(stock.last_updated).split(' ')[0] : 'N/A'}</Text>
             </View>
           </View>
         </View>
@@ -289,10 +427,10 @@ const StockDetails = () => {
             router.push({
               pathname: 'stocks/sell' as any,
               params: {
-                name: stockData.name,
-                price: stockData.price.replace(',', ''),
-                symbol: stockData.symbol,
-                shares: stockData.shares
+                name: stock.name,
+                price: stock.price?.toString() || '0',
+                symbol: stock.ticker,
+                shares: '0' // Default to 0 shares or fetch from user portfolio
               }
             });
           }}
@@ -307,9 +445,9 @@ const StockDetails = () => {
             router.push({
               pathname: 'stocks/buy' as any,
               params: {
-                name: stockData.name,
-                price: stockData.price.replace(',', ''),
-                symbol: stockData.symbol
+                name: stock.name,
+                price: stock.price?.toString() || '0',
+                symbol: stock.ticker
               }
             });
           }}
@@ -322,6 +460,43 @@ const StockDetails = () => {
 }
 
 const styles = StyleSheet.create({
+  // Loading and error states
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',

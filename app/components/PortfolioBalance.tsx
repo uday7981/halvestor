@@ -7,6 +7,7 @@ type PortfolioBalanceProps = {
   change: string;
   changePercent: string;
   isNegative: boolean;
+  cashBalance?: number; // Add cash balance prop
 };
 
 // Eye Icon for toggling balance visibility
@@ -25,13 +26,19 @@ const EyeIcon = ({ isVisible, onToggle }: { isVisible: boolean; onToggle: () => 
   </Pressable>
 );
 
-const PortfolioBalance = ({ balance, change, changePercent, isNegative }: PortfolioBalanceProps) => {
+const PortfolioBalance = ({ balance, change, changePercent, isNegative, cashBalance = 0 }: PortfolioBalanceProps) => {
   const [isBalanceVisible, setIsBalanceVisible] = useState(true);
-  
+
   const toggleBalanceVisibility = () => {
     setIsBalanceVisible(!isBalanceVisible);
   };
-  
+
+  // Format cash balance with 2 decimal places
+  const formattedCashBalance = cashBalance.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+
   return (
     <View style={styles.container}>
       <View style={styles.balanceRow}>
@@ -40,7 +47,7 @@ const PortfolioBalance = ({ balance, change, changePercent, isNegative }: Portfo
         </Text>
         <EyeIcon isVisible={isBalanceVisible} onToggle={toggleBalanceVisibility} />
       </View>
-      
+
       <View style={styles.changeContainer}>
         <View style={styles.changeIconContainer}>
           <Svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -65,10 +72,23 @@ const PortfolioBalance = ({ balance, change, changePercent, isNegative }: Portfo
           </Svg>
         </TouchableOpacity>
       </View>
-      
+
+      {/* Cash Balance Display */}
+      <View style={styles.cashBalanceContainer}>
+        <View style={styles.cashBalanceHeader}>
+          <Text style={styles.cashBalanceLabel}>Available Cash:</Text>
+          <View style={styles.cashBadge}>
+            <Text style={styles.cashBadgeText}>LIVE</Text>
+          </View>
+        </View>
+        <Text style={styles.cashBalanceValue}>
+          ${isBalanceVisible ? formattedCashBalance : '••••••'}
+        </Text>
+      </View>
+
       <View style={styles.actionButtons}>
         <TouchableOpacity style={styles.investButton}>
-          <Text style={styles.investButtonText}>Invest</Text>
+          <Text style={styles.investButtonText}>Deposit</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.withdrawButton}>
           <Text style={styles.withdrawButtonText}>Withdraw</Text>
@@ -134,9 +154,43 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 2,
   },
+  // Cash balance styles
+  cashBalanceContainer: {
+    marginTop: 16,
+    marginBottom: 8,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+  },
+  cashBalanceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  cashBalanceLabel: {
+    fontSize: 14,
+    color: '#64748B',
+    marginRight: 8,
+  },
+  cashBadge: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  cashBadgeText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  cashBalanceValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
   actionButtons: {
     flexDirection: 'row',
-    marginTop: 24,
+    marginTop: 8,
     gap: 16,
   },
   investButton: {

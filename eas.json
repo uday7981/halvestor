@@ -11,6 +11,9 @@
       "ios": {
         "resourceClass": "m1-medium"
       },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_NO_CAPABILITY_SYNC": "1",
         "npm_config_legacy_peer_deps": "true"
@@ -26,11 +29,17 @@
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "EXPO_NO_CAPABILITY_SYNC": "1"
+      }
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "EXPO_NO_CAPABILITY_SYNC": "1"
+      }
     }
   },
   "submit": {

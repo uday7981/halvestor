@@ -10,6 +10,13 @@ export type StockItemProps = {
   isPositive: boolean;
   isCompliant: boolean;
   onPress?: () => void;
+  // Additional fields from database
+  volume?: number;
+  high?: number;
+  low?: number;
+  open?: number;
+  date?: string;
+  market?: string;
 };
 
 const ExploreStockItem = ({

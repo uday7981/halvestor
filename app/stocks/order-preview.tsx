@@ -1,15 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   TouchableOpacity, 
   SafeAreaView,
-  ScrollView
+  ScrollView,
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { placeMarketOrder } from '../services/orderService';
+import { useUser } from '../context/UserContext';
 
 // Reusable components for modularity
 const OrderDetailRow = ({ 
@@ -36,6 +40,13 @@ export default function OrderPreview() {
   const amount = params.amount as string || '0';
   const orderType = params.orderType as string || 'Market order';
   const limitPrice = params.limitPrice as string || stockPrice;
+  const stockId = params.stock_id as string || '';
+  const transactionType = params.transactionType as string || 'buy';
+  
+  // Get user context to refresh profile after transaction
+  const { refreshUserProfile } = useUser();
+  
+  const [loading, setLoading] = useState(false);
   
   // Calculate values based on shares and price
   const formattedShares = shares;
@@ -46,21 +57,57 @@ export default function OrderPreview() {
     router.back();
   };
   
-  const handleConfirm = () => {
-    // Handle order confirmation
-    // In a real app, this would submit the order to a backend
-    router.replace({
-      pathname: 'stocks/order-confirmation' as any,
-      params: {
-        name: stockName,
-        symbol: stockSymbol,
-        price: stockPrice,
-        amount: amount,
-        shares: shares,
-        orderType: orderType,
-        limitPrice: limitPrice
+  const handleConfirm = async () => {
+    if (!stockId) {
+      Alert.alert('Error', 'Stock ID is missing');
+      return;
+    }
+    
+    setLoading(true);
+    
+    try {
+      // Place the market order
+      const { data, error, updatedCashBalance } = await placeMarketOrder({
+        stock_id: stockId,
+        quantity: parseFloat(shares),
+        transaction_type: transactionType as 'buy' | 'sell',
+      });
+      
+      if (error) {
+        throw new Error(error);
       }
-    });
+      
+      // Refresh user profile to update cash balance in UI
+      await refreshUserProfile();
+      
+      // Show updated balance in alert (optional)
+      if (updatedCashBalance !== undefined) {
+        console.log(`Updated cash balance: $${updatedCashBalance.toFixed(2)}`);
+      }
+      
+      // Navigate to confirmation screen
+      router.replace({
+        pathname: 'stocks/order-confirmation' as any,
+        params: {
+          name: stockName,
+          symbol: stockSymbol,
+          price: stockPrice,
+          amount: amount,
+          shares: shares,
+          orderType: orderType,
+          limitPrice: limitPrice,
+          orderId: data?.id || '',
+          transactionType: transactionType
+        }
+      });
+    } catch (err) {
+      Alert.alert(
+        'Order Failed',
+        err instanceof Error ? err.message : 'Failed to place order. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
   
   const formatTime = () => {
@@ -122,8 +169,16 @@ export default function OrderPreview() {
           <Text style={styles.cancelButtonText}>Cancel</Text>
         </TouchableOpacity>
         
-        <TouchableOpacity style={styles.confirmButton} onPress={handleConfirm}>
-          <Text style={styles.confirmButtonText}>Confirm</Text>
+        <TouchableOpacity 
+          style={[styles.confirmButton, loading && styles.confirmButtonDisabled]} 
+          onPress={handleConfirm}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Text style={styles.confirmButtonText}>Confirm Order</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -241,5 +296,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  confirmButtonDisabled: {
+    backgroundColor: '#94A3B8',
+    opacity: 0.8,
   },
 });

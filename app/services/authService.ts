@@ -10,7 +10,7 @@ export const signUpWithEmail = async (email: string, password: string, firstName
   try {
     console.log('Starting signup process for:', email);
     
-    // Simple signup approach with minimal options
+    // Step 1: Sign up the user with metadata
     const signUpResponse = await supabase.auth.signUp({
       email,
       password,
@@ -31,32 +31,68 @@ export const signUpWithEmail = async (email: string, password: string, firstName
     }
     
     const data = signUpResponse.data;
+    console.log('User created with ID:', data?.user?.id);
     
-    // Create a profile entry for the user if we have a user ID
+    // Step 2: Create a profile entry for the user if we have a user ID
     if (data?.user?.id) {
       console.log('Creating profile for user:', data.user.id);
       
       try {
-        const profileResponse = await supabase
+        // First check if a profile already exists
+        const { data: existingProfile, error: checkError } = await supabase
           .from('profiles')
-          .upsert({
-            id: data.user.id,
-            first_name: firstName,
-            last_name: lastName,
-            cash_balance: 500.00,
-            first_login: true,
-            created_at: new Date().toISOString(),
-          });
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+          
+        if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is the "not found" error code
+          console.error('Error checking for existing profile:', checkError.message);
+        }
         
-        if (profileResponse.error) {
-          console.error('Profile creation error:', profileResponse.error.message);
-          console.warn('Continuing despite profile creation error');
+        if (!existingProfile) {
+          // Profile doesn't exist, create it
+          const profileResponse = await supabase
+            .from('profiles')
+            .insert({
+              id: data.user.id,
+              first_name: firstName,
+              last_name: lastName,
+              cash_balance: 500.00,
+              first_login: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+          
+          if (profileResponse.error) {
+            console.error('Profile creation error:', profileResponse.error.message);
+            console.warn('Continuing despite profile creation error');
+          } else {
+            console.log('Profile created successfully with cash balance: 500.00');
+          }
         } else {
-          console.log('Profile created successfully');
+          console.log('Profile already exists for user, skipping creation');
         }
       } catch (profileError) {
         console.error('Exception during profile creation:', profileError);
         console.warn('Continuing despite profile creation exception');
+      }
+      
+      // Step 3: Update the user metadata in case it didn't save during signup
+      try {
+        const updateResponse = await supabase.auth.updateUser({
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+          }
+        });
+        
+        if (updateResponse.error) {
+          console.error('Error updating user metadata:', updateResponse.error.message);
+        } else {
+          console.log('User metadata updated successfully');
+        }
+      } catch (updateError) {
+        console.error('Exception during metadata update:', updateError);
       }
     }
     
@@ -121,6 +157,69 @@ export const verifyOTP = async (email: string, token: string) => {
       return { data: null, error: verifyResponse.error };
     }
     
+    // After successful verification, ensure the user has a profile
+    // This allows us to skip the user profile screen
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      
+      if (userData?.user?.id) {
+        // Get user metadata
+        const firstName = userData.user.user_metadata?.first_name || 'New';
+        const lastName = userData.user.user_metadata?.last_name || 'User';
+        
+        // First check if a profile already exists
+        const { data: existingProfile, error: checkError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userData.user.id)
+          .single();
+          
+        if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is the "not found" error code
+          console.error('Error checking for existing profile during verification:', checkError.message);
+        }
+        
+        if (!existingProfile) {
+          // Profile doesn't exist, create it with INSERT instead of UPSERT
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .insert({
+              id: userData.user.id,
+              first_name: firstName,
+              last_name: lastName,
+              cash_balance: 500.00, // Explicitly set cash balance to 500
+              first_login: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+          
+          if (profileError) {
+            console.error('Profile creation error during verification:', profileError.message);
+          } else {
+            console.log('Profile created successfully during verification with cash balance: 500.00');
+          }
+        } else {
+          console.log('Profile already exists for user, skipping creation during verification');
+        }
+        
+        // Update user metadata to ensure first_name and last_name are set
+        const updateResponse = await supabase.auth.updateUser({
+          data: {
+            first_name: firstName,
+            last_name: lastName,
+          }
+        });
+        
+        if (updateResponse.error) {
+          console.error('Error updating user metadata during verification:', updateResponse.error.message);
+        } else {
+          console.log('User metadata updated successfully during verification');
+        }
+      }
+    } catch (profileError) {
+      console.error('Error creating profile during verification:', profileError);
+      // Continue despite profile creation error
+    }
+    
     console.log('OTP verification successful');
     return { data: verifyResponse.data, error: null };
   } catch (error) {
@@ -163,8 +262,99 @@ export const getUserProfile = async (userId: string) => {
       .eq('id', userId)
       .single();
 
-    return { profile: data, error };
+    if (error) throw error;
+
+    return { data, error: null };
   } catch (error) {
-    return { profile: null, error: error as AuthError | ErrorWithMessage };
+    return { data: null, error };
+  }
+};
+
+// Sign in with Google
+export const signInWithGoogle = async () => {
+  try {
+    console.log('Starting Google sign-in process');
+    
+    // For production TestFlight build
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: 'halvestor://auth/callback',
+        scopes: 'email profile', // Request email and profile info
+        skipBrowserRedirect: true, // Important for mobile apps
+      },
+    });
+    
+    if (error) {
+      console.error('Google sign-in error:', error.message);
+      return { data: null, error };
+    }
+    
+    if (!data?.url) {
+      console.error('No URL returned for Google sign-in');
+      return { 
+        data: null, 
+        error: { message: 'No URL returned for Google sign-in' } as ErrorWithMessage 
+      };
+    }
+    
+    // Add a timestamp parameter to avoid caching issues
+    const timestamp = new Date().getTime();
+    const urlWithTimestamp = `${data.url}&_t=${timestamp}`;
+    
+    console.log('Google sign-in URL generated:', urlWithTimestamp);
+    return { data: { ...data, url: urlWithTimestamp }, error: null };
+  } catch (error) {
+    console.error('Exception during Google sign-in:', error);
+    return { 
+      data: null, 
+      error: error instanceof Error ? error : { message: 'An unknown error occurred' } as ErrorWithMessage 
+    };
+  }
+};
+
+// Handle OAuth callback
+export const handleOAuthCallback = async (url: string) => {
+  try {
+    console.log('Handling OAuth callback URL:', url);
+    
+    // Extract the parameters from the URL
+    if (url.includes('#')) {
+      const params = new URLSearchParams(url.split('#')[1]);
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+      
+      if (accessToken) {
+        console.log('Access token found in callback URL');
+        
+        // Set the session using the tokens
+        const { data, error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken || '',
+        });
+        
+        if (error) {
+          console.error('Error setting session:', error.message);
+          return { data: null, error };
+        }
+        
+        console.log('Session set successfully');
+        return { data, error: null };
+      }
+    }
+    
+    console.error('No tokens found in callback URL');
+    return { 
+      data: null, 
+      error: { message: 'No tokens found in callback URL' } as ErrorWithMessage 
+    };
+  } catch (error) {
+    console.error('Exception during OAuth callback handling:', error);
+    return { 
+      data: null, 
+      error: {
+        message: error instanceof Error ? error.message : 'An unknown error occurred during OAuth callback handling'
+      } as ErrorWithMessage 
+    };
   }
 };

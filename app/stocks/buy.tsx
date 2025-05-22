@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,13 +6,17 @@ import {
   TouchableOpacity, 
   SafeAreaView,
   TextInput,
-  Pressable
+  Pressable,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import OrderTypeModal from '../components/OrderTypeModal';
 import LimitOrderView from '../components/LimitOrderView';
+import { getStockByTicker } from '../services/stockService';
+import { placeMarketOrder } from '../services/orderService';
 
 // Reusable components for modularity
 const NumPadButton = ({ 
@@ -52,12 +56,57 @@ const OrderTypeSelector = ({
 
 export default function BuyStock() {
   const params = useLocalSearchParams();
-  const stockName = params.name as string || 'Apple';
-  const stockPrice = params.price as string || '240.17';
+  const stockSymbol = params.symbol as string || '';
   
+  const [stock, setStock] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
   const [orderType, setOrderType] = useState('Market order');
   const [orderTypeModalVisible, setOrderTypeModalVisible] = useState(false);
+  const [availableBalance, setAvailableBalance] = useState(10000); // Mock balance for now
+  const [calculatedShares, setCalculatedShares] = useState(0);
+  
+  useEffect(() => {
+    const fetchStockData = async () => {
+      if (!stockSymbol) {
+        setError('No stock symbol provided');
+        setLoading(false);
+        return;
+      }
+      
+      try {
+        const { data, error } = await getStockByTicker(stockSymbol);
+        
+        if (error) {
+          throw new Error(error);
+        }
+        
+        if (data) {
+          setStock(data);
+        } else {
+          setError('Stock not found');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchStockData();
+  }, [stockSymbol]);
+  
+  // Calculate shares based on amount
+  useEffect(() => {
+    if (amount && stock?.price) {
+      const parsedAmount = parseFloat(amount);
+      const shares = parsedAmount / stock.price;
+      setCalculatedShares(shares);
+    } else {
+      setCalculatedShares(0);
+    }
+  }, [amount, stock]);
   
   const handleBack = () => {
     router.back();
@@ -79,16 +128,27 @@ export default function BuyStock() {
     }
   };
   
+  const handleBuyMax = () => {
+    if (stock?.price && availableBalance > 0) {
+      // Set amount to max available balance (minus a small buffer for fees)
+      const maxAmount = (availableBalance - 0.50).toFixed(2);
+      setAmount(maxAmount);
+    }
+  };
+  
   const handlePreviewOrder = () => {
-    if (amount) {
+    if (amount && stock) {
       // Navigate to order preview screen
       router.push({
         pathname: 'stocks/order-preview' as any,
         params: {
-          name: stockName,
-          price: stockPrice,
-          symbol: 'AAPL',
-          amount: amount
+          name: stock.name,
+          price: stock.price.toString(),
+          symbol: stock.ticker,
+          amount: amount,
+          shares: calculatedShares.toFixed(8),
+          orderType: orderType,
+          stock_id: stock.id
         }
       });
     }
@@ -104,11 +164,13 @@ export default function BuyStock() {
           <Text style={styles.amountText}>{amount}</Text>
         </View>
         
-        <Text style={styles.sharesText}>~0 shares • 1APPL = ${stockPrice}</Text>
+        <Text style={styles.sharesText}>
+          ~{calculatedShares.toFixed(8)} shares • 1{stock?.ticker || ''} = ${stock?.price?.toFixed(2) || '0.00'}
+        </Text>
         
         <View style={styles.balanceContainer}>
-          <Text style={styles.balanceText}>$0.85 available</Text>
-          <TouchableOpacity style={styles.buyMaxButton}>
+          <Text style={styles.balanceText}>${availableBalance.toFixed(2)} available</Text>
+          <TouchableOpacity style={styles.buyMaxButton} onPress={handleBuyMax}>
             <Text style={styles.buyMaxText}>Buy max</Text>
           </TouchableOpacity>
         </View>
@@ -162,26 +224,45 @@ export default function BuyStock() {
         <TouchableOpacity style={styles.backButton} onPress={handleBack}>
           <Ionicons name="chevron-back" size={24} color="#1E293B" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Buy {stockName}</Text>
-        <View style={{ width: 40 }} />
+        <Text style={styles.headerTitle}>Buy {stock?.name || 'Stock'}</Text>
       </View>
       
-      {orderType === 'Market order' ? (
-        renderMarketOrderView()
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#10B981" />
+          <Text style={styles.loadingText}>Loading stock data...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color="#EF4444" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.tryAgainButton} onPress={handleBack}>
+            <Text style={styles.tryAgainButtonText}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
-        <LimitOrderView 
-          stockName={stockName}
-          currentPrice={stockPrice}
-          onContinue={() => {}}
-          onOrderTypePress={toggleOrderTypeModal}
-        />
+        <>
+          {orderType === 'Market order' ? (
+            renderMarketOrderView()
+          ) : (
+            <LimitOrderView 
+              stockName={stock?.name || ''}
+              currentPrice={stock?.price?.toString() || '0'}
+              onContinue={handlePreviewOrder}
+              onOrderTypePress={toggleOrderTypeModal}
+            />
+          )}
+        </>
       )}
       
-      <OrderTypeModal
+      <OrderTypeModal 
         visible={orderTypeModalVisible}
         onClose={toggleOrderTypeModal}
         selectedType={orderType}
-        onSelectType={setOrderType}
+        onSelectType={(type) => {
+          setOrderType(type);
+          toggleOrderTypeModal();
+        }}
       />
     </SafeAreaView>
   );
@@ -191,6 +272,41 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#64748B',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    marginTop: 10,
+    marginBottom: 20,
+    fontSize: 16,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+  tryAgainButton: {
+    backgroundColor: '#10B981',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  tryAgainButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   header: {
     flexDirection: 'row',

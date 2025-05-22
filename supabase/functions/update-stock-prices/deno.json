@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "deploy": "supabase functions deploy update-stock-prices"
+  },
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["deno.window"],
+    "strict": true
+  }
+}

@@ -17,7 +17,7 @@ export default function GetStarted() {
       <StatusBar style="dark" translucent backgroundColor="transparent" />
 
       {/* Header */}
-      <Header username="Uday" avatarInitials="AC" />
+      <Header />
 
       {/* Main Card */}
       <View style={styles.card}>

@@ -82,7 +82,7 @@ export default function Welcome() {
       <StatusBar style="dark" translucent backgroundColor="transparent" />
 
       {/* Header */}
-      <Header username={firstName} avatarInitials={avatarInitials} />
+      <Header />
 
       {/* Main Card */}
       <View style={styles.card}>

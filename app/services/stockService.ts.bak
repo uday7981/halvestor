@@ -1,0 +1,507 @@
+import { supabase } from '../lib/supabase';
+
+// Types
+export interface Stock {
+  id: string;
+  ticker: string;
+  name: string;
+  market: string;
+  is_compliant: boolean;
+  about_stock?: any;
+  price?: number;
+  change_percent?: number;
+  last_updated?: string;
+  created_at?: string;
+  updated_at?: string;
+  // Additional fields from MarketStack
+  volume?: number;
+  high?: number;
+  low?: number;
+  open?: number;
+  date?: string;
+  adj_close?: number;
+  adj_high?: number;
+  adj_low?: number;
+  adj_open?: number;
+  exchange_country?: string;
+}
+
+export interface WatchlistItem {
+  id: string;
+  user_id: string;
+  stock_id: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Client-side cache for stock data
+const stockCache: Record<string, { data: Stock, timestamp: number }> = {};
+const CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Get all stocks from the database
+ */
+export const getAllStocks = async (options?: { 
+  compliantOnly?: boolean, 
+  market?: string,
+  refreshPrices?: boolean
+}): Promise<{ data: Stock[] | null, error: string | null }> => {
+  try {
+    // Start building the query
+    let query = supabase
+      .from('stocks')
+      .select('*');
+    
+    // Apply filters
+    if (options?.compliantOnly) {
+      query = query.eq('is_compliant', true);
+    }
+    
+    if (options?.market) {
+      query = query.eq('market', options.market);
+    }
+    
+    // Execute the query
+    const { data, error } = await query;
+    
+    if (error) throw error;
+    
+    if (data && options?.refreshPrices) {
+      // Get tickers for all stocks
+      const tickers = data.map(stock => stock.ticker);
+      
+      // Update prices in batches of 100 (MarketStack limit)
+      if (tickers.length > 0) {
+        await updateStockPrices(tickers);
+        
+        // Fetch the updated data
+        const { data: refreshedData, error: refreshError } = await query;
+        
+        if (refreshError) throw refreshError;
+        
+        return { data: refreshedData, error: null };
+      }
+    }
+    
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error fetching stocks:', error);
+    return { 
+      data: null, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Get a single stock by ticker
+ */
+export const getStockByTicker = async (ticker: string): Promise<{ data: Stock | null, error: string | null }> => {
+  try {
+    // Check client-side cache first
+    const now = Date.now();
+    if (stockCache[ticker] && (now - stockCache[ticker].timestamp) < CACHE_EXPIRY) {
+      return { data: stockCache[ticker].data, error: null };
+    }
+    
+    // Fetch from database
+    const { data, error } = await supabase
+      .from('stocks')
+      .select('*')
+      .eq('ticker', ticker)
+      .single();
+    
+    if (error) throw error;
+    
+    if (data) {
+      // Update cache
+      stockCache[ticker] = { data, timestamp: now };
+      
+      // If price data is old or missing, update it
+      if (!data.last_updated || 
+          new Date(data.last_updated).getTime() < (now - CACHE_EXPIRY)) {
+        updateStockPrices([ticker]).catch(err => 
+          console.error(`Error updating price for ${ticker}:`, err)
+        );
+      }
+      
+      return { data, error: null };
+    }
+    
+    return { data: null, error: 'Stock not found' };
+  } catch (error) {
+    console.error(`Error fetching stock ${ticker}:`, error);
+    return { 
+      data: null, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Update stock prices using the Edge Function
+ */
+export const updateStockPrices = async (tickers: string[]): Promise<{ success: boolean, error: string | null }> => {
+  if (tickers.length === 0) return { success: true, error: null };
+  
+  try {
+    // Split into batches of 100 (MarketStack limit)
+    const batches: string[][] = [];
+    for (let i = 0; i < tickers.length; i += 100) {
+      batches.push(tickers.slice(i, i + 100));
+    }
+    
+    for (const batch of batches) {
+      // Call the Edge Function for each batch
+      const { data, error } = await supabase.functions.invoke(
+        'update-stock-prices',
+        {
+          body: { symbols: batch }
+        }
+      );
+      
+      if (error) throw error;
+      
+      // Update client-side cache with the results
+      const now = Date.now();
+      if (data.data) {
+        data.data.forEach((stockData: Stock) => {
+          if (stockData && stockData.ticker) {
+            // If we already have this stock in cache, update it
+            if (stockCache[stockData.ticker]) {
+              stockCache[stockData.ticker] = {
+                data: { ...stockCache[stockData.ticker].data, ...stockData },
+                timestamp: now
+              };
+            }
+          }
+        });
+      }
+    }
+    
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error updating stock prices:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Search stocks by keyword
+ */
+export const searchStocks = async (query: string): Promise<{ data: Stock[] | null, error: string | null }> => {
+  try {
+    if (!query || query.trim() === '') {
+      return { data: [], error: null };
+    }
+    
+    const { data, error } = await supabase
+      .from('stocks')
+      .select('*')
+      .or(`name.ilike.%${query}%,ticker.ilike.%${query}%`)
+      .limit(20);
+    
+    if (error) throw error;
+    
+    return { data, error: null };
+  } catch (error) {
+    console.error('Error searching stocks:', error);
+    return { 
+      data: null, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Add a stock to user's watchlist
+ */
+export const addToWatchlist = async (stockId: string): Promise<{ success: boolean, error: string | null }> => {
+  try {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    
+    if (!userId) {
+      return { success: false, error: 'User not authenticated' };
+    }
+    
+    const { error } = await supabase
+      .from('watchlist')
+      .insert({
+        stock_id: stockId,
+        user_id: userId
+      });
+    
+    if (error) {
+      // If it's a duplicate entry error, we can consider this a success
+      if (error.code === '23505') { // Unique violation code
+        return { success: true, error: null };
+      }
+      throw error;
+    }
+    
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error adding to watchlist:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Remove a stock from user's watchlist
+ */
+export const removeFromWatchlist = async (stockId: string): Promise<{ success: boolean, error: string | null }> => {
+  try {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    
+    if (!userId) {
+      return { success: false, error: 'User not authenticated' };
+    }
+    
+    const { error } = await supabase
+      .from('watchlist')
+      .delete()
+      .match({ stock_id: stockId, user_id: userId });
+    
+    if (error) throw error;
+    
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error removing from watchlist:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Check if a stock is in user's watchlist
+ */
+export const isInWatchlist = async (stockId: string): Promise<{ isWatchlisted: boolean, error: string | null }> => {
+  try {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    
+    if (!userId) {
+      return { isWatchlisted: false, error: 'User not authenticated' };
+    }
+    
+    const { data, error } = await supabase
+      .from('watchlist')
+      .select('id')
+      .match({ stock_id: stockId, user_id: userId })
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') { // No rows returned
+        return { isWatchlisted: false, error: null };
+      }
+      throw error;
+    }
+    
+    return { isWatchlisted: !!data, error: null };
+  } catch (error) {
+    console.error('Error checking watchlist status:', error);
+    return { 
+      isWatchlisted: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Get all stocks in user's watchlist
+ */
+export const getWatchlistItems = async (): Promise<{ data: Stock[] | null, error: string | null }> => {
+  try {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    
+    if (!userId) {
+      return { data: null, error: 'User not authenticated' };
+    }
+    
+    // First get the watchlist items
+    const { data: watchlistItems, error: watchlistError } = await supabase
+      .from('watchlist')
+      .select('stock_id')
+      .eq('user_id', userId);
+    
+    if (watchlistError) throw watchlistError;
+    
+    if (!watchlistItems || watchlistItems.length === 0) {
+      return { data: [], error: null };
+    }
+    
+    // Then get the actual stock data
+    const stockIds = watchlistItems.map((item: { stock_id: string }) => item.stock_id);
+    
+    const { data: stocks, error: stocksError } = await supabase
+      .from('stocks')
+      .select('*')
+      .in('id', stockIds);
+    
+    if (stocksError) throw stocksError;
+    
+    return { data: stocks, error: null };
+  } catch (error) {
+    console.error('Error fetching watchlist stocks:', error);
+    return { 
+      data: null, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Add a stock to user's watchlist
+ */
+export const addToWatchlist = async (stockId: string): Promise<{ success: boolean, error: string | null }> => {
+  try {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    
+    if (!userId) {
+      return { success: false, error: 'User not authenticated' };
+    }
+    
+    const { error } = await supabase
+      .from('watchlist')
+      .insert({
+        stock_id: stockId,
+        user_id: userId
+      });
+    
+    if (error) {
+      // If it's a duplicate entry error, we can consider this a success
+      if (error.code === '23505') { // Unique violation code
+        return { success: true, error: null };
+      }
+      throw error;
+    }
+    
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error adding to watchlist:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Remove a stock from user's watchlist
+ */
+export const removeFromWatchlist = async (stockId: string): Promise<{ success: boolean, error: string | null }> => {
+  try {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    
+    if (!userId) {
+      return { success: false, error: 'User not authenticated' };
+    }
+    
+    const { error } = await supabase
+      .from('watchlist')
+      .delete()
+      .match({ stock_id: stockId, user_id: userId });
+    
+    if (error) throw error;
+    
+    return { success: true, error: null };
+  } catch (error) {
+    console.error('Error removing from watchlist:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Check if a stock is in user's watchlist
+ */
+export const isInWatchlist = async (stockId: string): Promise<{ isWatchlisted: boolean, error: string | null }> => {
+  try {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    
+    if (!userId) {
+      return { isWatchlisted: false, error: 'User not authenticated' };
+    }
+    
+    const { data, error } = await supabase
+      .from('watchlist')
+      .select('id')
+      .match({ stock_id: stockId, user_id: userId })
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') { // No rows returned
+        return { isWatchlisted: false, error: null };
+      }
+      throw error;
+    }
+    
+    return { isWatchlisted: !!data, error: null };
+  } catch (error) {
+    console.error('Error checking watchlist status:', error);
+    return { 
+      isWatchlisted: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};
+
+/**
+ * Get all stocks in user's watchlist
+ */
+export const getWatchlistStocks = async (): Promise<{ data: Stock[] | null, error: string | null }> => {
+  try {
+    const user = await supabase.auth.getUser();
+    const userId = user.data.user?.id;
+    
+    if (!userId) {
+      return { data: null, error: 'User not authenticated' };
+    }
+    
+    // First get the watchlist items
+    const { data: watchlistItems, error: watchlistError } = await supabase
+      .from('watchlist')
+      .select('stock_id')
+      .eq('user_id', userId);
+    
+    if (watchlistError) throw watchlistError;
+    
+    if (!watchlistItems || watchlistItems.length === 0) {
+      return { data: [], error: null };
+    }
+    
+    // Then get the actual stock data
+    const stockIds = watchlistItems.map(item => item.stock_id);
+    
+    const { data: stocks, error: stocksError } = await supabase
+      .from('stocks')
+      .select('*')
+      .in('id', stockIds);
+    
+    if (stocksError) throw stocksError;
+    
+    return { data: stocks, error: null };
+  } catch (error) {
+    console.error('Error fetching watchlist stocks:', error);
+    return { 
+      data: null, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
+  }
+};

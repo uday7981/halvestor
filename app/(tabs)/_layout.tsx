@@ -24,6 +24,15 @@ const WatchlistIcon = ({ color }: { color: string }) => (
   </Svg>
 );
 
+// Purification Wallet Icon SVG
+const PurificationIcon = ({ color }: { color: string }) => (
+  <Svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+    <Path d="M18 7H21C21.5523 7 22 7.44772 22 8V16C22 16.5523 21.5523 17 21 17H18" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M2 6C2 4.89543 2.89543 4 4 4H18C19.1046 4 20 4.89543 20 6V18C20 19.1046 19.1046 20 18 20H4C2.89543 20 2 19.1046 2 18V6Z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    <Path d="M12 11C12 9.89543 12.8954 9 14 9C15.1046 9 16 9.89543 16 11C16 12.1046 15.1046 13 14 13C12.8954 13 12 12.1046 12 11Z" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
+
 // Home indicator component removed to avoid duplication with native iOS indicator
 
 // Custom TabBar component
@@ -111,6 +120,13 @@ export default function TabLayout() {
           options={{
             title: 'Watchlist',
             tabBarIcon: ({ color }: { color: string }) => <WatchlistIcon color={color} />,
+          }}
+        />
+        <Tabs.Screen
+          name="purification"
+          options={{
+            title: 'Purification',
+            tabBarIcon: ({ color }: { color: string }) => <PurificationIcon color={color} />,
           }}
         />
       </Tabs>

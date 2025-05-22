@@ -18,3 +18,10 @@ declare module 'web-streams-polyfill/ponyfill/es6' {
     // Add other methods as needed
   }
 }
+
+// Add a default export to satisfy Expo Router's requirement
+// This is just a dummy component that will never be rendered
+import React from 'react';
+export default function WebStreamsPolyfill() {
+  return null;
+}

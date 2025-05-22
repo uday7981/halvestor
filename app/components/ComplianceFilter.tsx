@@ -16,6 +16,21 @@ const ComplianceFilter = ({ selectedFilter, onFilterChange }: ComplianceFilterPr
         <TouchableOpacity
           style={[
             styles.filterButton,
+            selectedFilter === 'all' && styles.selectedFilter
+          ]}
+          onPress={() => onFilterChange('all')}
+        >
+          <Text style={[
+            styles.filterText,
+            selectedFilter === 'all' && styles.selectedFilterText
+          ]}>
+            All
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.filterButton,
             selectedFilter === 'compliant' && styles.selectedFilter
           ]}
           onPress={() => onFilterChange('compliant')}

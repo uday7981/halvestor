@@ -9,13 +9,16 @@ import {
   KeyboardAvoidingView, 
   Platform, 
   Keyboard,
-  Alert
+  Alert,
+  Dimensions
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { verifyOTP } from '../services/authService';
 import AuthButton from '../components/AuthButton';
+
+const { width } = Dimensions.get('window');
 
 export default function VerifyEmail() {
   const params = useLocalSearchParams();
@@ -104,8 +107,9 @@ export default function VerifyEmail() {
         return;
       }
       
-      // Navigate to user profile page on successful verification
-      router.push('/auth/user-profile');
+      // Navigate directly to get-started screen on successful verification
+      // Skip the user profile screen as requested
+      router.push('/get-started');
     } catch (error: any) {
       Alert.alert('Error', error.message || 'An unexpected error occurred. Please try again.');
       console.error('OTP verification error:', error);
@@ -127,9 +131,10 @@ export default function VerifyEmail() {
         </TouchableOpacity>
         
         <View style={styles.header}>
-          <Text style={styles.title}>Verify your email</Text>
+          <Text style={styles.title}>Verify your email address</Text>
           <Text style={styles.subtitle}>
-            We've sent a verification code to {email}
+            We've sent a 6 digit-code to your email address
+            that you provided in the previous step.
           </Text>
         </View>
         
@@ -151,26 +156,21 @@ export default function VerifyEmail() {
         </View>
         
         <View style={styles.resendContainer}>
-          {isTimerRunning ? (
-            <Text style={styles.timerText}>Resend code in {timer}s</Text>
-          ) : (
-            <TouchableOpacity 
-              onPress={handleResendCode}
-              disabled={isResending}
-            >
-              <Text style={[styles.resendText, isResending && styles.resendTextDisabled]}>
-                {isResending ? 'Sending...' : 'Resend code'}
-              </Text>
-            </TouchableOpacity>
-          )}
+          <Text style={styles.resendText}>
+            Didn't receive the code? <Text style={styles.resendLink} onPress={handleResendCode}>
+              Resend in {isTimerRunning ? timer : 0}:{isTimerRunning ? '30' : '00'}
+            </Text>
+          </Text>
         </View>
         
         <AuthButton
-          title={isVerifying ? "Verifying..." : "Continue"}
+          title="Continue"
           onPress={handleContinue}
           disabled={isVerifying || !otp.every(digit => digit !== '')}
           loading={isVerifying}
           style={styles.continueButton}
+          textStyle={styles.continueButtonText}
+          variant="primary"
         />
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -193,16 +193,16 @@ const styles = StyleSheet.create({
     backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 30,
   },
   header: {
-    marginBottom: 40,
+    marginBottom: 60,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
     color: '#1E293B',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   subtitle: {
     fontSize: 16,
@@ -212,36 +212,42 @@ const styles = StyleSheet.create({
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 30,
+    marginBottom: 40,
+    paddingHorizontal: 10,
   },
   otpInput: {
-    width: 48,
-    height: 56,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
+    width: (width - 80) / 6,
+    height: (width - 80) / 6,
+    borderWidth: 0,
+    borderRadius: (width - 80) / 12,
     textAlign: 'center',
     fontSize: 20,
     fontWeight: '600',
     color: '#1E293B',
+    backgroundColor: '#F1F5F9',
   },
   resendContainer: {
     alignItems: 'center',
-    marginBottom: 30,
-  },
-  timerText: {
-    fontSize: 14,
-    color: '#64748B',
+    marginBottom: 40,
   },
   resendText: {
     fontSize: 14,
-    color: '#2E7D32',
-    fontWeight: '500',
+    color: '#64748B',
+    textAlign: 'center',
   },
-  resendTextDisabled: {
-    color: '#94A3B8',
+  resendLink: {
+    fontSize: 14,
+    color: '#3B82F6',
+    fontWeight: '500',
   },
   continueButton: {
     marginTop: 'auto',
+    backgroundColor: '#BFDBFE',
+    borderRadius: 100,
+  },
+  continueButtonText: {
+    color: '#1E293B',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });

@@ -88,7 +88,7 @@ const FilterOverlay = ({
               <View style={styles.optionTextContainer}>
                 <Text style={styles.optionTitle}>Shariah Non-Compliant!</Text>
                 <Text style={styles.optionDescription}>
-                  Shows all investments, including those that may not meet halal criteria.
+                  Shows investments that don't meet halal criteria.
                 </Text>
               </View>
               <View style={styles.radioContainer}>
@@ -97,6 +97,31 @@ const FilterOverlay = ({
                   options.complianceFilter === 'non-compliant' && styles.radioOuterSelected
                 ]}>
                   {options.complianceFilter === 'non-compliant' && (
+                    <View style={styles.radioInner} />
+                  )}
+                </View>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.optionRow}
+              onPress={() => handleComplianceChange('all')}
+            >
+              <View style={styles.optionIconContainer}>
+                <Ionicons name="list" size={24} color="#64748B" />
+              </View>
+              <View style={styles.optionTextContainer}>
+                <Text style={styles.optionTitle}>All Stocks</Text>
+                <Text style={styles.optionDescription}>
+                  Shows all available stocks regardless of compliance status.
+                </Text>
+              </View>
+              <View style={styles.radioContainer}>
+                <View style={[
+                  styles.radioOuter,
+                  options.complianceFilter === 'all' && styles.radioOuterSelected
+                ]}>
+                  {options.complianceFilter === 'all' && (
                     <View style={styles.radioInner} />
                   )}
                 </View>

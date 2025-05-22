@@ -1,11 +1,16 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Pressable } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Pressable, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import AuthButton from '../components/AuthButton';
+import { signInWithGoogle } from '../services/authService';
+import * as WebBrowser from 'expo-web-browser';
+import { supabase } from '../config/supabase';
 
 export default function AuthWelcome() {
+  const [googleLoading, setGoogleLoading] = useState(false);
+
   const handleEmailSignIn = () => {
     // Navigate to email sign in screen
     router.push('/auth/login');
@@ -16,9 +21,56 @@ export default function AuthWelcome() {
     console.log('Apple sign in pressed');
   };
 
-  const handleGoogleSignIn = () => {
-    // Handle Google sign in
-    console.log('Google sign in pressed');
+  const handleGoogleSignIn = async () => {
+    try {
+      setGoogleLoading(true);
+      
+      // Call the signInWithGoogle function
+      const { data, error } = await signInWithGoogle();
+      
+      if (error) {
+        console.error('Google sign-in error:', error.message);
+        return;
+      }
+      
+      if (!data?.url) {
+        console.error('No URL returned for Google sign-in');
+        return;
+      }
+      
+      // Configure the redirect URI
+      const redirectUri = 'halvestor://auth/callback';
+      
+      // Open the URL in a web browser
+      console.log('Opening auth URL:', data.url);
+      
+      try {
+        // For production, use openAuthSessionAsync with the redirect URI
+        const result = await WebBrowser.openAuthSessionAsync(
+          data.url,
+          redirectUri
+        );
+        
+        console.log('Auth result:', result);
+        
+        // If we have a success result with a URL, try to extract tokens
+        if (result.type === 'success' && result.url) {
+          console.log('Authentication successful');
+          
+          // Check if we have a session
+          const { data: sessionData } = await supabase.auth.getSession();
+          if (sessionData?.session) {
+            console.log('Session established');
+          }
+        }
+      } catch (error) {
+        console.error('Error during WebBrowser session:', error);
+      }
+    } catch (error) {
+      console.error('Exception during Google sign-in:', error);
+    } finally {
+      setGoogleLoading(false);
+    }
   };
 
   const handleLogin = () => {
@@ -65,10 +117,15 @@ export default function AuthWelcome() {
               style={styles.socialButton} 
               onPress={handleGoogleSignIn}
               activeOpacity={0.8}
+              disabled={googleLoading}
             >
-              <View style={styles.googleIconContainer}>
-                <Ionicons name="logo-google" size={22} color="#4285F4" />
-              </View>
+              {googleLoading ? (
+                <ActivityIndicator size="small" color="#4285F4" style={{marginRight: 8}} />
+              ) : (
+                <View style={styles.googleIconContainer}>
+                  <Ionicons name="logo-google" size={22} color="#4285F4" />
+                </View>
+              )}
               <Text style={styles.socialButtonText}>Google</Text>
             </TouchableOpacity>
           </View>

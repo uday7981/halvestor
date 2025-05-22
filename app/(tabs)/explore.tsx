@@ -1,133 +1,264 @@
-import { View, Text, SafeAreaView, StyleSheet, FlatList, Platform } from 'react-native';
-import React, { useState, useEffect } from 'react';
+import { View, Text, SafeAreaView, StyleSheet, FlatList, Platform, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
 import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import SearchBar from '../components/SearchBar';
 import ExploreStockItem, { StockItemProps } from '../components/ExploreStockItem';
 import ExploreStockGrid from '../components/ExploreStockGrid';
 import FilterOverlay, { FilterOptions } from '../components/FilterOverlay';
-
-const stocksData: StockItemProps[] = [
-  { symbol: 'GOOGL', name: 'Alphabet Inc.', price: '2,650.78', change: '81.98', changePercent: '3.7', isPositive: false, isCompliant: true },
-  { symbol: 'AAPL', name: 'Apple Inc.', price: '168.88', change: '3.67', changePercent: '2.13', isPositive: true, isCompliant: true },
-  { symbol: 'AMZN', name: 'Amazon', price: '159.22', change: '14.72', changePercent: '2.8', isPositive: false, isCompliant: false },
-  { symbol: 'NVDA', name: 'Nvidia', price: '290.73', change: '8.77', changePercent: '3.0', isPositive: false, isCompliant: true },
-  { symbol: 'SPOT', name: 'Spotify Inc.', price: '189.47', change: '4.72', changePercent: '1.9', isPositive: true, isCompliant: true },
-  { symbol: 'MSFT', name: 'Microsoft Corp.', price: '293.25', change: '2.37', changePercent: '2.0', isPositive: false, isCompliant: false },
-  { symbol: 'TSLA', name: 'Tesla', price: '254.11', change: '249.19', changePercent: '1.94', isPositive: true, isCompliant: true },
-  { symbol: 'FIGM', name: 'Figma', price: '95.29', change: '14.72', changePercent: '2.8', isPositive: false, isCompliant: false },
-  { symbol: 'FRMR', name: 'Framer', price: '80.45', change: '1.23', changePercent: '1.5', isPositive: true, isCompliant: true },
-];
+import { getAllStocks, Stock } from '../services/stockService';
+import { formatCurrency, formatLargeNumber } from '../utils/formatters';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function Explore() {
   const [searchQuery, setSearchQuery] = useState('');
-  const [filteredStocks, setFilteredStocks] = useState(stocksData);
+  const [stocks, setStocks] = useState<StockItemProps[]>([]);
+  const [filteredStocks, setFilteredStocks] = useState<StockItemProps[]>([]);
   const [isFilterVisible, setIsFilterVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    complianceFilter: 'compliant',
+    complianceFilter: 'all',
     viewStyle: 'list'
   });
 
-  const applyFilters = (stocks: StockItemProps[], query: string, options: FilterOptions) => {
-    let filtered = stocks;
-    
-    // Apply search query filter
-    if (query.trim() !== '') {
-      filtered = filtered.filter(
-        stock => 
-          stock.name.toLowerCase().includes(query.toLowerCase()) ||
-          stock.symbol.toLowerCase().includes(query.toLowerCase())
-      );
-    }
-    
-    // Apply compliance filter
-    if (options.complianceFilter === 'compliant') {
-      filtered = filtered.filter(stock => stock.isCompliant);
-    } else if (options.complianceFilter === 'non-compliant') {
-      filtered = filtered.filter(stock => !stock.isCompliant);
-    }
-    
-    return filtered;
+  // Convert database stocks to UI format
+  const mapStocksToUI = (data: Stock[]): StockItemProps[] => {
+    return data.map(stock => ({
+      symbol: stock.ticker,
+      name: stock.name || stock.ticker,
+      price: formatCurrency(stock.price || 0),
+      change: formatCurrency(Math.abs((stock.price || 0) * (stock.change_percent || 0) / 100)),
+      changePercent: stock.change_percent ? stock.change_percent.toFixed(2) : '0.00',
+      isPositive: (stock.change_percent || 0) >= 0,
+      isCompliant: stock.is_compliant,
+      // Additional data from MarketStack
+      volume: stock.volume,
+      high: stock.high,
+      low: stock.low,
+      open: stock.open,
+      date: stock.date,
+      market: stock.market
+    }));
   };
 
+  // Fetch stocks from Supabase
+  const fetchStocks = useCallback(async (showRefresh = false) => {
+    if (showRefresh) {
+      setRefreshing(true);
+    } else {
+      setIsLoading(true);
+    }
+
+    try {
+      const { data, error } = await getAllStocks();
+
+      if (error) {
+        throw new Error(error);
+      }
+
+      if (data) {
+        const formattedStocks = mapStocksToUI(data);
+        setStocks(formattedStocks);
+      }
+    } catch (err) {
+      console.error('Error fetching stocks:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load stocks');
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  // Handle pull-to-refresh
+  const onRefresh = useCallback(() => {
+    fetchStocks(true);
+  }, [fetchStocks]);
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchStocks();
+
+    // Set up a refresh interval (every 5 minutes)
+    const refreshInterval = setInterval(() => {
+      fetchStocks();
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(refreshInterval);
+  }, [fetchStocks]);
+
+  // Apply filters when search query or filter options change
+  useEffect(() => {
+    const applyFilters = () => {
+      let filtered = [...stocks];
+
+      // Apply search query filter
+      if (searchQuery.trim() !== '') {
+        filtered = filtered.filter(
+          stock =>
+            stock.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            stock.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+
+      // Apply compliance filter
+      if (filterOptions.complianceFilter === 'compliant') {
+        filtered = filtered.filter(stock => stock.isCompliant);
+      } else if (filterOptions.complianceFilter === 'non-compliant') {
+        filtered = filtered.filter(stock => !stock.isCompliant);
+      }
+
+      setFilteredStocks(filtered);
+    };
+
+    applyFilters();
+  }, [stocks, searchQuery, filterOptions]);
+
+  // Handle search input
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    setFilteredStocks(applyFilters(stocksData, text, filterOptions));
   };
-  
-  const handleFilterPress = () => {
-    setIsFilterVisible(true);
+
+  // Toggle filter overlay
+  const toggleFilterOverlay = () => {
+    setIsFilterVisible(!isFilterVisible);
   };
-  
-  const handleFilterClose = () => {
+
+  // Close filter overlay
+  const closeFilterOverlay = () => {
     setIsFilterVisible(false);
   };
-  
-  const handleFilterChange = (newOptions: FilterOptions) => {
-    setFilterOptions(newOptions);
-    setFilteredStocks(applyFilters(stocksData, searchQuery, newOptions));
-  };
-  
-  // Re-apply filters when options change
-  useEffect(() => {
-    setFilteredStocks(applyFilters(stocksData, searchQuery, filterOptions));
-  }, [filterOptions]);
 
-  const handleStockPress = (symbol: string) => {
-    router.push(`/stocks/${symbol}`);
+  // Apply filter options
+  const handleFilterApply = (options: FilterOptions) => {
+    setFilterOptions(options);
+    setIsFilterVisible(false);
   };
 
+  // Navigate to stock detail screen
+  const handleStockPress = (stock: StockItemProps) => {
+    // Use the appropriate navigation method for your app
+    router.push({
+      pathname: '/stocks/[id]',
+      params: { id: stock.symbol }
+    });
+  };
+
+  // Render stock item based on view style
   const renderStockItem = ({ item }: { item: StockItemProps }) => {
-    if (filterOptions.viewStyle === 'list') {
+    if (filterOptions.viewStyle === 'grid') {
       return (
-        <ExploreStockItem 
-          {...item} 
-          onPress={() => handleStockPress(item.symbol)}
-        />
-      );
-    } else {
-      return (
-        <ExploreStockGrid 
-          {...item} 
-          onPress={() => handleStockPress(item.symbol)}
+        <ExploreStockGrid
+          {...item}
+          onPress={() => handleStockPress(item)}
         />
       );
     }
+
+    return (
+      <ExploreStockItem
+        {...item}
+        onPress={() => handleStockPress(item)}
+      />
+    );
   };
 
+  // Render empty state
+  const renderEmptyState = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.emptyContainer}>
+          <ActivityIndicator size="large" color="#0066CC" />
+          <Text style={styles.emptyText}>Loading stocks...</Text>
+        </View>
+      );
+    }
+
+    if (error) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="alert-circle-outline" size={48} color="#FF3B30" />
+          <Text style={styles.emptyText}>Error loading stocks</Text>
+          <Text style={styles.errorDetails}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => fetchStocks()}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    if (filteredStocks.length === 0) {
+      return (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="search-outline" size={48} color="#8E8E93" />
+          <Text style={styles.emptyText}>No stocks found</Text>
+          <Text style={styles.emptySubtext}>
+            {searchQuery ? 'Try a different search term' : 'Try changing your filters'}
+          </Text>
+        </View>
+      );
+    }
+
+    return null;
+  };
+
+  // Main render
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar style="dark" translucent backgroundColor="transparent" />
-      
+      <StatusBar style={Platform.OS === 'ios' ? 'dark' : 'light'} />
+
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Explore</Text>
-        <View style={styles.avatarContainer}>
-          <Text style={styles.avatarText}>AC</Text>
-        </View>
+        <Text style={styles.title}>Explore</Text>
+        <TouchableOpacity style={styles.filterButton} onPress={toggleFilterOverlay}>
+          <Ionicons name="options-outline" size={24} color="#0066CC" />
+        </TouchableOpacity>
       </View>
-      
-      <SearchBar 
-        onSearch={handleSearch} 
-        onFilterPress={handleFilterPress} 
-        placeholder="Search"
-      />
-      
-      <FilterOverlay
-        visible={isFilterVisible}
-        onClose={handleFilterClose}
-        options={filterOptions}
-        onOptionsChange={handleFilterChange}
-      />
-      
+
+      <View style={styles.searchContainer}>
+        <SearchBar
+          placeholder="Search stocks..."
+          onSearch={handleSearch}
+        />
+      </View>
+
+      {filteredStocks.length > 0 && (
+        <View style={styles.statsContainer}>
+          <Text style={styles.statsText}>
+            Showing {filteredStocks.length} {filteredStocks.length === 1 ? 'stock' : 'stocks'}
+          </Text>
+          <Text style={styles.updatedText}>
+            Last updated: {new Date().toLocaleTimeString()}
+          </Text>
+        </View>
+      )}
+
       <FlatList
         data={filteredStocks}
         renderItem={renderStockItem}
-        keyExtractor={item => item.symbol}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContainer}
+        keyExtractor={(item) => item.symbol}
+        contentContainerStyle={[
+          styles.listContent,
+          filteredStocks.length === 0 && styles.emptyList
+        ]}
         numColumns={filterOptions.viewStyle === 'grid' ? 2 : 1}
-        key={filterOptions.viewStyle} // Force re-render when view style changes
-        columnWrapperStyle={filterOptions.viewStyle === 'grid' ? styles.gridColumnWrapper : undefined}
+        key={filterOptions.viewStyle === 'grid' ? 'grid' : 'list'}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#0066CC']}
+            tintColor="#0066CC"
+          />
+        }
+        ListEmptyComponent={renderEmptyState}
+      />
+
+      <FilterOverlay
+        visible={isFilterVisible}
+        onClose={closeFilterOverlay}
+        options={filterOptions}
+        onOptionsChange={handleFilterApply}
       />
     </SafeAreaView>
   );
@@ -137,7 +268,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingTop: Platform.OS === 'ios' ? 50 : 8,
   },
   header: {
     flexDirection: 'row',
@@ -145,30 +275,77 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 16,
+    paddingBottom: 8,
   },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: '600',
-    color: '#1E293B',
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#000000',
   },
-  avatarContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#60A5FA',
+  filterButton: {
+    padding: 8,
+  },
+  searchContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#F8F8F8',
+  },
+  statsText: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  updatedText: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  listContent: {
+    padding: 8,
+  },
+  emptyList: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarText: {
-    color: '#FFFFFF',
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#000000',
+    marginTop: 16,
+  },
+  emptySubtext: {
     fontSize: 16,
-    fontWeight: '600',
+    color: '#666666',
+    textAlign: 'center',
+    marginTop: 8,
   },
-  listContainer: {
-    padding: 16,
+  errorDetails: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+    marginTop: 8,
   },
-  gridColumnWrapper: {
-    justifyContent: 'space-between',
+  retryButton: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    backgroundColor: '#0066CC',
+    borderRadius: 8,
+  },
+  retryText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
 });

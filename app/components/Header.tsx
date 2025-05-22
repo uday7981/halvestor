@@ -1,18 +1,40 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { router } from 'expo-router';
+import { useUser } from '../context/UserContext';
 
 type HeaderProps = {
-  username: string;
-  avatarInitials: string;
+  username?: string;
+  avatarInitials?: string;
 };
 
 const Header = ({ username, avatarInitials }: HeaderProps) => {
+  // Get user data from context
+  const { userProfile } = useUser();
+  
+  // Use provided props or fall back to context data
+  const displayName = username || userProfile?.first_name || 'User';
+  
+  // Generate initials from context if not provided
+  const displayInitials = avatarInitials || 
+    (userProfile ? 
+      `${userProfile.first_name?.[0] || ''}${userProfile.last_name?.[0] || ''}` : 
+      'U');
+  
+  const handleAvatarPress = () => {
+    router.push('/profile');
+  };
+
   return (
     <View style={styles.header}>
-      <Text style={styles.greeting}>Hi {username}</Text>
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{avatarInitials}</Text>
-      </View>
+      <Text style={styles.greeting}>Hi {displayName}</Text>
+      <TouchableOpacity 
+        style={styles.avatar} 
+        onPress={handleAvatarPress}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.avatarText}>{displayInitials}</Text>
+      </TouchableOpacity>
     </View>
   );
 };

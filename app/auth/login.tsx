@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -11,20 +11,62 @@ import {
   Alert
 } from 'react-native';
 import { router } from 'expo-router';
+import * as Linking from 'expo-linking';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import AuthButton from '../components/AuthButton';
 import AuthInput from '../components/AuthInput';
-import { signInWithEmail } from '../services/authService';
+import GoogleSignInButton from '../components/GoogleSignInButton';
+import { signInWithEmail, handleOAuthCallback } from '../services/authService';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errors, setErrors] = useState({
     email: '',
     password: ''
   });
+  
+  // Handle OAuth callback
+  useEffect(() => {
+    // Set up a listener for URL changes
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      if (url && url.includes('auth/callback')) {
+        console.log('Received OAuth callback URL:', url);
+        handleOAuthCallback(url)
+          .then(({ data, error }) => {
+            if (error) {
+              Alert.alert('Authentication Error', error.message || 'Failed to complete authentication');
+              return;
+            }
+            
+            if (data?.session) {
+              // Successfully authenticated
+              router.replace('/welcome');
+            }
+          })
+          .catch(err => {
+            console.error('Error handling OAuth callback:', err);
+            Alert.alert('Authentication Error', 'Failed to complete authentication');
+          });
+      }
+    });
+    
+    // Check if the app was opened with a URL
+    Linking.getInitialURL().then(url => {
+      if (url && url.includes('auth/callback')) {
+        console.log('App opened with URL:', url);
+        handleOAuthCallback(url);
+      }
+    });
+    
+    // Clean up the subscription
+    return () => {
+      subscription.remove();
+    };
+  }, []);
   
   const validateInputs = () => {
     let isValid = true;
@@ -139,6 +181,21 @@ export default function Login() {
               loading={loading}
               style={styles.loginButton}
             />
+            
+            <View style={styles.dividerContainer}>
+              <View style={styles.divider} />
+              <Text style={styles.dividerText}>OR</Text>
+              <View style={styles.divider} />
+            </View>
+            
+            <GoogleSignInButton 
+              onSuccess={() => {
+                // Will be handled by the useEffect that watches for URL changes
+              }}
+              onError={(error) => {
+                Alert.alert('Google Sign-In Error', error);
+              }}
+            />
           </View>
 
           <View style={styles.signupContainer}>
@@ -163,19 +220,17 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 20,
+    padding: 24,
   },
   backButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   header: {
-    marginBottom: 30,
+    marginBottom: 32,
   },
   title: {
     fontSize: 28,
@@ -186,30 +241,42 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#64748B',
-    lineHeight: 24,
   },
   form: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   forgotPasswordContainer: {
     alignSelf: 'flex-end',
-    marginTop: -10,
-    marginBottom: 20,
+    marginBottom: 24,
   },
   forgotPasswordText: {
+    color: '#3B82F6',
     fontSize: 14,
-    color: '#2E7D32',
     fontWeight: '500',
   },
   loginButton: {
-    marginBottom: 20,
+    marginBottom: 16,
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dividerText: {
+    marginHorizontal: 10,
+    color: '#64748B',
+    fontSize: 14,
   },
   signupContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
     marginTop: 'auto',
-    marginBottom: 20,
+    paddingVertical: 16,
   },
   signupText: {
     fontSize: 14,
@@ -217,7 +284,7 @@ const styles = StyleSheet.create({
   },
   signupLink: {
     fontSize: 14,
-    color: '#2E7D32',
+    color: '#3B82F6',
     fontWeight: '500',
   },
 });
