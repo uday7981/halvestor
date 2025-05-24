@@ -8,21 +8,35 @@ async function createNewUserProfile(user: User) {
     
     // Get user metadata
     const metadata = user.user_metadata;
-    const firstName = metadata?.full_name ? metadata.full_name.split(' ')[0] : '';
-    const lastName = metadata?.full_name ? metadata.full_name.split(' ').slice(1).join(' ') : '';
+    const firstName = metadata?.first_name || (metadata?.full_name ? metadata.full_name.split(' ')[0] : '');
+    const lastName = metadata?.last_name || (metadata?.full_name ? metadata.full_name.split(' ').slice(1).join(' ') : '');
+    const country = metadata?.country || 'United Kingdom';
+    
+    console.log('Creating profile with metadata:', { firstName, lastName, country, userId: user.id });
     
     try {
       // First check if profile already exists to avoid duplicate key errors
-      const { data: existingProfile } = await supabase
+      // Don't use maybeSingle() as it can throw errors
+      const { data: existingProfiles, error: checkError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', user.id)
-        .maybeSingle();
+        .limit(1);
         
+      if (checkError) {
+        console.log('Error checking for existing profile:', checkError.message);
+        // Continue anyway, we'll try to create the profile
+      }
+        
+      const existingProfile = existingProfiles && existingProfiles.length > 0 ? existingProfiles[0] : null;
+      
       if (existingProfile) {
         console.log('Profile already exists, using existing profile');
         return {
-          profile: existingProfile,
+          profile: {
+            ...existingProfile,
+            email: user.email
+          },
           error: null
         };
       }
@@ -35,6 +49,7 @@ async function createNewUserProfile(user: User) {
             id: user.id,
             first_name: firstName,
             last_name: lastName,
+            country: country, // Use country from metadata
             cash_balance: 500, // Default cash balance
             first_login: true,
             created_at: new Date().toISOString(),
@@ -122,26 +137,23 @@ export const getUserProfile = async () => {
     
     // Get profile data from profiles table
     try {
-      const { data: profileData, error: profileError } = await supabase
+      // Use a more reliable approach - don't use maybeSingle() as it throws errors
+      // when no rows are found, which is a normal condition for new users
+      const { data: profilesData, error: profileError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userData.user.id)
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
+        
+      // Handle the response manually
+      const profileData = profilesData && profilesData.length > 0 ? profilesData[0] : null;
       
+      // Handle any database query errors
       if (profileError) {
-        // Log the error but don't throw it to the UI in production
-        console.error('Error fetching profile:', profileError.message);
+        // Log the error but don't show it to the user
+        console.log('Database error when fetching profile:', profileError.message);
         
-        // For specific known errors, we can handle them gracefully
-        if (profileError.code === 'PGRST116') {
-          // This is the "JSON object requested, multiple (or no) rows returned" error
-          // We'll treat this as if no profile was found and create one
-          console.log('No profile found or multiple profiles returned, will attempt to create one');
-          return await createNewUserProfile(userData.user);
-        }
-        
-        // For other errors, return a generic error message
+        // Return a generic error message
         return { 
           profile: null, 
           error: 'Unable to retrieve profile. Please try again later.' 
@@ -150,13 +162,16 @@ export const getUserProfile = async () => {
       
       // If profile doesn't exist, create one
       if (!profileData) {
-        // Use the helper function to create a new profile
+        console.log('No profile found, creating a new profile for user');
         return await createNewUserProfile(userData.user);
       }
       
-      // If we have a profile, return it
+      // If we have a profile, return it with email from auth user
       return { 
-        profile: profileData, 
+        profile: {
+          ...profileData,
+          email: userData.user.email
+        }, 
         error: null 
       };
     } catch (error: any) {

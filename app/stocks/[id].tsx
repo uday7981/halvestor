@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import SimpleStockChart from '../components/SimpleStockChart';
 import { getStockByTicker, Stock, addToWatchlist, removeFromWatchlist, isInWatchlist } from '../services/stockService';
+import { getHoldingByTicker } from '../services/holdingService';
 import { formatCurrency, formatLargeNumber, formatDate } from '../utils/formatters';
 
 // Define timeframe type
@@ -30,6 +31,7 @@ const StockDetails = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTimeframe, setActiveTimeframe] = useState<TimeframeOption>('1m');
+  const [userHolding, setUserHolding] = useState<number>(0);
   
   // Fetch stock data from the database
   useEffect(() => {
@@ -72,23 +74,49 @@ const StockDetails = () => {
   
   // Check if stock is in watchlist
   useEffect(() => {
-    const checkWatchlistStatus = async () => {
-      if (!stock) return;
-      
-      try {
-        const { isWatchlisted, error } = await isInWatchlist(stock.id);
-        if (error) {
-          console.error('Error checking watchlist status:', error);
-          return;
+    const checkWatchlist = async () => {
+      if (stock) {
+        try {
+          const { isWatchlisted: result } = await isInWatchlist(stock.id);
+          setIsWatchlisted(result);
+        } catch (err) {
+          console.error('Error checking watchlist status:', err);
         }
-        
-        setIsWatchlisted(isWatchlisted);
-      } catch (err) {
-        console.error('Error checking watchlist status:', err);
       }
     };
     
-    checkWatchlistStatus();
+    checkWatchlist();
+  }, [stock]);
+  
+  // Fetch user's current holdings for this stock
+  useEffect(() => {
+    const fetchUserHolding = async () => {
+      if (stock && stock.ticker) {
+        try {
+          console.log('Fetching user holdings for ticker:', stock.ticker);
+          const { data: holding, error } = await getHoldingByTicker(stock.ticker);
+          
+          if (error) {
+            console.error('Error fetching holding:', error);
+            setUserHolding(0);
+            return;
+          }
+          
+          if (holding && holding.quantity > 0) {
+            console.log('Found holding with quantity:', holding.quantity);
+            setUserHolding(holding.quantity);
+          } else {
+            console.log('No holding found or quantity is 0');
+            setUserHolding(0);
+          }
+        } catch (error) {
+          console.error('Exception in fetchUserHolding:', error);
+          setUserHolding(0);
+        }
+      }
+    };
+    
+    fetchUserHolding();
   }, [stock]);
   
   const handleFavorite = async () => {
@@ -423,14 +451,15 @@ const StockDetails = () => {
         <TouchableOpacity 
           style={styles.sellButton}
           onPress={() => {
-            // Navigate to sell screen with stock details
+            // Navigate to sell screen with stock details and current holdings
             router.push({
-              pathname: 'stocks/sell' as any,
+              pathname: 'stocks/shares-sell-input' as any,
               params: {
                 name: stock.name,
                 price: stock.price?.toString() || '0',
                 symbol: stock.ticker,
-                shares: '0' // Default to 0 shares or fetch from user portfolio
+                availableShares: userHolding.toString(), // Pass the user's current holdings
+                stock_id: stock.id
               }
             });
           }}
@@ -447,7 +476,8 @@ const StockDetails = () => {
               params: {
                 name: stock.name,
                 price: stock.price?.toString() || '0',
-                symbol: stock.ticker
+                symbol: stock.ticker,
+                stock_id: stock.id
               }
             });
           }}

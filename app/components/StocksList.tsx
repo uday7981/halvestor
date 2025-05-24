@@ -15,19 +15,19 @@ const StocksList = ({ onSeeAll, refreshTrigger = 0 }: StocksListProps) => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Fetch user holdings
   const fetchHoldings = async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       const { data, error } = await getUserHoldings();
-      
+
       if (error) {
         throw new Error(error);
       }
-      
+
       setHoldings(data || []);
     } catch (err) {
       console.error('Error fetching holdings:', err);
@@ -36,26 +36,26 @@ const StocksList = ({ onSeeAll, refreshTrigger = 0 }: StocksListProps) => {
       setLoading(false);
     }
   };
-  
+
   // Fetch holdings on initial load and when refreshTrigger changes
   useEffect(() => {
     fetchHoldings();
   }, [refreshTrigger]);
-  
+
   // Handle stock item press
   const handleStockPress = (ticker: string) => {
     router.push(`/stocks/${ticker}` as any);
   };
-  
+
   // Handle see all press
   const handleSeeAll = () => {
     if (onSeeAll) {
       onSeeAll();
     } else {
-      router.push('/portfolio' as any);
+      router.push('/portfolio/all-holdings' as any);
     }
   };
-  
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -69,7 +69,7 @@ const StocksList = ({ onSeeAll, refreshTrigger = 0 }: StocksListProps) => {
       </View>
     );
   }
-  
+
   if (error) {
     return (
       <View style={styles.container}>
@@ -86,7 +86,7 @@ const StocksList = ({ onSeeAll, refreshTrigger = 0 }: StocksListProps) => {
       </View>
     );
   }
-  
+
   if (holdings.length === 0) {
     return (
       <View style={styles.container}>
@@ -96,7 +96,7 @@ const StocksList = ({ onSeeAll, refreshTrigger = 0 }: StocksListProps) => {
         </View>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>You don't have any stocks yet</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.exploreButton}
             onPress={() => router.push('/explore' as any)}
           >
@@ -106,7 +106,7 @@ const StocksList = ({ onSeeAll, refreshTrigger = 0 }: StocksListProps) => {
       </View>
     );
   }
-  
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -121,7 +121,7 @@ const StocksList = ({ onSeeAll, refreshTrigger = 0 }: StocksListProps) => {
         const change = currentPrice - previousPrice;
         const changePercent = holding.stock?.change_percent || 0;
         const isPositive = changePercent >= 0;
-        
+
         return (
           <StockItem
             key={holding.id}

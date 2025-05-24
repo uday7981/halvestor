@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { getUserOrders, Order } from '../services/orderService';
 import { formatDate } from '../utils/formatters';
@@ -28,34 +29,41 @@ const TransactionItem = ({
   time,
 }: TransactionItemProps) => {
   const isPositive = action === 'Sell';
+  const actionColor = isPositive ? '#16A34A' : '#DC2626';
+  const actionBgColor = isPositive ? '#DCFCE7' : '#FEE2E2';
 
   return (
     <View style={styles.transactionItem}>
       <View style={styles.leftSection}>
         {logo ? (
-        <Image source={logo} style={styles.transactionLogo} />
-      ) : (
-        <View style={[styles.transactionLogo, styles.logoPlaceholder]}>
-          <Text style={styles.logoInitial}>{stockName.charAt(0)}</Text>
+          <Image source={logo} style={styles.transactionLogo} />
+        ) : (
+          <View style={[styles.transactionLogo, styles.logoPlaceholder]}>
+            <Text style={styles.logoInitial}>{stockName.charAt(0)}</Text>
+          </View>
+        )}
+        <View style={styles.transactionInfo}>
+          <Text style={styles.transactionTitle}>{stockName}</Text>
+          <Text style={styles.transactionSubtitle} numberOfLines={1} ellipsizeMode="tail">
+            {shares} @ {price}
+          </Text>
         </View>
-      )}
-        <View>
-          <Text style={styles.transactionTitle}>
-            {action} {stockName}
-          </Text>
-          <Text style={styles.transactionSubtitle}>
-            {date} • {shares} shares • ${price}
-          </Text>
+      </View>
+      <View style={styles.middleSection}>
+        <View style={[styles.actionBadge, { backgroundColor: actionBgColor }]}>
+          <Text style={[styles.actionText, { color: actionColor }]}>{action}</Text>
         </View>
       </View>
       <View style={styles.rightSection}>
         <Text style={[
           styles.transactionAmount,
-          { color: isPositive ? '#16A34A' : '#DC2626' }
+          { color: actionColor }
         ]}>
-          {isPositive ? '+' : '-'} ${amount}
+          {isPositive ? '+' : '-'} {amount}
         </Text>
-        <Text style={styles.transactionTime}>{time}</Text>
+        <View style={styles.dateTimeContainer}>
+          <Text style={styles.transactionDate}>{date}</Text>
+        </View>
       </View>
     </View>
   );
@@ -102,7 +110,7 @@ const RecentTransactions = ({ onSeeAll, refreshTrigger = 0 }: RecentTransactions
     if (onSeeAll) {
       onSeeAll();
     } else {
-      router.push('/portfolio' as any);
+      router.push('/transactions' as any);
     }
   };
   
@@ -114,7 +122,8 @@ const RecentTransactions = ({ onSeeAll, refreshTrigger = 0 }: RecentTransactions
           <Text style={styles.subtitle}>Loading...</Text>
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color="#3B82F6" />
+          <ActivityIndicator size="small" color="#10B981" />
+          <Text style={styles.loadingText}>Loading your transactions...</Text>
         </View>
       </View>
     );
@@ -145,7 +154,11 @@ const RecentTransactions = ({ onSeeAll, refreshTrigger = 0 }: RecentTransactions
           <Text style={styles.subtitle}>No transactions</Text>
         </View>
         <View style={styles.emptyContainer}>
+          <View style={styles.emptyIconContainer}>
+            <Ionicons name="receipt-outline" size={40} color="#CBD5E1" />
+          </View>
           <Text style={styles.emptyText}>You don't have any transactions yet</Text>
+          <Text style={styles.emptySubtext}>Your transaction history will appear here once you start trading</Text>
         </View>
       </View>
     );
@@ -194,110 +207,184 @@ const RecentTransactions = ({ onSeeAll, refreshTrigger = 0 }: RecentTransactions
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 20,
     marginHorizontal: 16,
     marginTop: 16,
     marginBottom: 16,
-    padding: 16,
+    padding: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
   title: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#64748B',
+    fontWeight: '500',
   },
   transactionItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
+    borderBottomColor: '#F1F5F9',
+    marginBottom: 2,
+    paddingRight: 8,
   },
   leftSection: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+    marginRight: 8,
+  },
+  middleSection: {
+    alignItems: 'center',
+    marginHorizontal: 4,
   },
   transactionLogo: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     marginRight: 12,
   },
   logoPlaceholder: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
   },
   logoInitial: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
-    color: '#6B7280',
+    color: '#64748B',
   },
-  transactionTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#111827',
+  transactionInfo: {
+    flex: 1,
+    flexShrink: 1,
+    marginRight: 4,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 4,
   },
+  actionBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    minWidth: 50,
+    alignItems: 'center',
+  },
+  actionText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  transactionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 2,
+  },
   transactionSubtitle: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 13,
+    color: '#64748B',
   },
   rightSection: {
     alignItems: 'flex-end',
+    minWidth: 80,
+    marginLeft: 4,
   },
   transactionAmount: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     marginBottom: 4,
   },
+  dateTimeContainer: {
+    alignItems: 'flex-end',
+  },
+  transactionDate: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
   transactionTime: {
-    fontSize: 14,
-    color: '#6B7280',
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
   },
   loadingContainer: {
-    padding: 20,
+    padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  loadingText: {
+    fontSize: 14,
+    color: '#64748B',
+    marginTop: 12,
+    fontWeight: '500',
+  },
   errorContainer: {
-    padding: 20,
+    padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   errorText: {
-    fontSize: 14,
-    color: '#DC2626',
-    marginBottom: 8,
+    fontSize: 15,
+    color: '#EF4444',
+    textAlign: 'center',
+    marginBottom: 12,
+    fontWeight: '500',
   },
   retryText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#3B82F6',
+    fontWeight: '600',
+    color: '#10B981',
   },
   emptyContainer: {
-    padding: 20,
+    padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  emptyIconContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
   emptyText: {
+    fontSize: 16,
+    color: '#334155',
+    textAlign: 'center',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  emptySubtext: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#64748B',
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    lineHeight: 20,
   },
   seeAllButton: {
     marginTop: 12,
@@ -308,22 +395,23 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   viewAllButton: {
-    marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 8,
-    alignSelf: 'center',
+    marginTop: 20,
+    paddingVertical: 14,
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   seeAllText: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#3B82F6',
+    fontWeight: '600',
+    color: '#10B981',
   },
   viewAllText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#3B82F6',
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0F172A',
   },
 });
 

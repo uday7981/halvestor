@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -56,11 +56,25 @@ export default function SellStock() {
   const stockPrice = params.price as string || '240.17';
   const stockSymbol = params.symbol as string || 'AAPL';
   const availableShares = params.shares as string || '10';
+  const stock_id = params.stock_id as string || '';
   
   const [amount, setAmount] = useState('');
   const [orderType, setOrderType] = useState('Market order');
   const [orderTypeModalVisible, setOrderTypeModalVisible] = useState(false);
+  const [calculatedShares, setCalculatedShares] = useState(0);
   
+  // Calculate shares based on dollar amount
+  useEffect(() => {
+    if (amount && stockPrice) {
+      const parsedAmount = parseFloat(amount);
+      const price = parseFloat(stockPrice);
+      const shares = parsedAmount / price;
+      setCalculatedShares(shares);
+    } else {
+      setCalculatedShares(0);
+    }
+  }, [amount, stockPrice]);
+
   const handleBack = () => {
     router.back();
   };
@@ -81,9 +95,19 @@ export default function SellStock() {
     }
   };
   
+  const handleSellMax = () => {
+    if (stockPrice && availableShares) {
+      // Calculate the maximum dollar amount based on available shares
+      const price = parseFloat(stockPrice);
+      const shares = parseFloat(availableShares);
+      const maxAmount = (price * shares).toFixed(2);
+      setAmount(maxAmount);
+    }
+  };
+  
   const handlePreviewOrder = () => {
     if (amount) {
-      // Navigate to order preview screen
+      // Navigate to order preview screen with dollar amount
       router.push({
         pathname: 'stocks/sell-order-preview' as any,
         params: {
@@ -91,7 +115,9 @@ export default function SellStock() {
           price: stockPrice,
           symbol: stockSymbol,
           amount: amount,
-          orderType: 'Market order'
+          shares: calculatedShares.toFixed(8),
+          orderType: 'Market order',
+          stock_id: stock_id
         }
       });
     }
@@ -107,11 +133,13 @@ export default function SellStock() {
           <Text style={styles.amountText}>{amount}</Text>
         </View>
         
-        <Text style={styles.sharesText}>~0 shares • 1APPL = ${stockPrice}</Text>
+        <Text style={styles.sharesText}>
+          ~{calculatedShares.toFixed(8)} shares • 1{stockSymbol} = ${stockPrice}
+        </Text>
         
         <View style={styles.balanceContainer}>
           <Text style={styles.balanceText}>{availableShares} shares available</Text>
-          <TouchableOpacity style={styles.sellMaxButton}>
+          <TouchableOpacity style={styles.sellMaxButton} onPress={handleSellMax}>
             <Text style={styles.sellMaxText}>Sell max</Text>
           </TouchableOpacity>
         </View>

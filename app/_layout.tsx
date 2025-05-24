@@ -34,25 +34,34 @@ const createOrUpdateUserProfile = async (userId: string, user: User) => {
   try {
     console.log('Checking if user profile exists...');
     
-    // Check if profile exists
-    const { data: existingProfile, error: fetchError } = await supabase
+    // Check if profile exists - don't use maybeSingle() to avoid errors
+    const { data: profiles, error: fetchError } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .maybeSingle();
+      .limit(1);
     
-    if (fetchError && fetchError.code !== 'PGRST116') {
-      console.error('Error checking for existing profile:', fetchError.message);
+    if (fetchError) {
+      console.log('Error checking for existing profile:', fetchError.message);
       return;
     }
     
+    const existingProfile = profiles && profiles.length > 0 ? profiles[0] : null;
+    
     if (!existingProfile) {
       // Double-check if profile exists to avoid race conditions
-      const { data: doubleCheckProfile } = await supabase
+      const { data: doubleCheckProfiles, error: doubleCheckError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .maybeSingle();
+        .limit(1);
+        
+      if (doubleCheckError) {
+        console.log('Error in double-check for profile:', doubleCheckError.message);
+        // Continue anyway to create profile
+      }
+      
+      const doubleCheckProfile = doubleCheckProfiles && doubleCheckProfiles.length > 0 ? doubleCheckProfiles[0] : null;
         
       if (doubleCheckProfile) {
         console.log('Profile found in double-check, using existing profile');
@@ -63,8 +72,12 @@ const createOrUpdateUserProfile = async (userId: string, user: User) => {
       
       // Get user metadata
       const metadata = user.user_metadata;
-      const firstName = metadata?.full_name ? metadata.full_name.split(' ')[0] : '';
-      const lastName = metadata?.full_name ? metadata.full_name.split(' ').slice(1).join(' ') : '';
+      // Try to get first_name and last_name directly from metadata, fall back to splitting full_name
+      const firstName = metadata?.first_name || (metadata?.full_name ? metadata.full_name.split(' ')[0] : '');
+      const lastName = metadata?.last_name || (metadata?.full_name ? metadata.full_name.split(' ').slice(1).join(' ') : '');
+      const country = metadata?.country || 'United Kingdom';
+      
+      console.log('Creating profile with metadata:', { firstName, lastName, country, userId });
       
       try {
         // Create new profile
@@ -75,6 +88,7 @@ const createOrUpdateUserProfile = async (userId: string, user: User) => {
               id: userId,
               first_name: firstName,
               last_name: lastName,
+              country: country,
               cash_balance: 500, // Default cash balance
               first_login: true,
               created_at: new Date().toISOString(),
@@ -235,7 +249,7 @@ export default function RootLayout() {
           .single()
           .then(({ data, error }) => {
             if (error) {
-              console.error('Error fetching profile:', error.message);
+              console.log('Profile fetch issue:', error.message);
               // If there's an error, it might be a new Google user without a profile
               router.replace('/welcome');
               return;

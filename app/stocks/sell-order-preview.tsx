@@ -6,11 +6,14 @@ import {
   TouchableOpacity, 
   SafeAreaView,
   ScrollView,
-  Image
+  Image,
+  Alert
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { getStockByTicker } from '../services/stockService';
+import { placeMarketOrder } from '../services/orderService';
 
 // Reusable components for modularity
 const OrderDetailRow = ({ 
@@ -40,34 +43,67 @@ export default function SellOrderPreview() {
   
   // Calculate values based on shares and price
   const latestPrice = parseFloat(stockPrice);
-  const orderValue = parseFloat(amount);
+  const sharesQuantity = parseFloat(shares);
+  const orderValue = sharesQuantity * latestPrice; // Calculate dollar amount from shares
   const executionFee = 0.10;
   const purificationValue = 3.75; // percentage
-  const totalProceeds = 10.00; // This would be calculated in a real app
+  const totalProceeds = orderValue - executionFee; // Simple calculation for preview
   
-  // Calculate estimated shares based on amount and price
-  const estimatedShares = orderValue / latestPrice;
-  const formattedShares = estimatedShares.toFixed(8);
+  // Format values for display
+  const formattedOrderValue = orderValue.toFixed(2);
+  const formattedShares = sharesQuantity.toFixed(8);
   
   const handleCancel = () => {
     router.back();
   };
   
-  const handleConfirm = () => {
-    // Handle order confirmation
-    // In a real app, this would submit the order to a backend
-    router.replace({
-      pathname: 'stocks/sell-order-confirmation' as any,
-      params: {
-        name: stockName,
-        symbol: stockSymbol,
-        price: stockPrice,
-        amount: amount,
-        shares: shares,
-        orderType: orderType,
-        limitPrice: limitPrice
+  const handleConfirm = async () => {
+    try {
+      // First, get the stock ID from the symbol
+      const { data: stockData, error: stockError } = await getStockByTicker(stockSymbol);
+      
+      if (stockError || !stockData) {
+        console.error('Error fetching stock data:', stockError);
+        alert('Unable to place order. Please try again.');
+        return;
       }
-    });
+      
+      // Place the market order - using shares quantity, not dollar amount
+      const { data, error, updatedCashBalance, realizedPL } = await placeMarketOrder({
+        stock_id: stockData.id,
+        quantity: parseFloat(shares), // Use shares quantity instead of dollar amount
+        transaction_type: 'sell',
+      });
+      
+      if (error) {
+        console.error('Error placing sell order:', error);
+        alert(`Unable to place order: ${error}`);
+        return;
+      }
+      
+      console.log('Sell order placed successfully:', data);
+      console.log('Updated cash balance:', updatedCashBalance);
+      console.log('Realized P&L:', realizedPL);
+      
+      // Navigate to confirmation screen
+      router.replace({
+        pathname: 'stocks/sell-order-confirmation' as any,
+        params: {
+          name: stockName,
+          symbol: stockSymbol,
+          price: stockPrice,
+          amount: (parseFloat(shares) * parseFloat(stockPrice)).toFixed(2), // Calculate amount from shares
+          shares: shares, // Use actual shares quantity
+          orderType: orderType,
+          limitPrice: limitPrice,
+          success: 'true',
+          realized_pl: realizedPL ? realizedPL.toString() : '0'
+        }
+      });
+    } catch (err) {
+      console.error('Error in handleConfirm:', err);
+      alert('An unexpected error occurred. Please try again.');
+    }
   };
   
   const formatTime = () => {
@@ -98,9 +134,10 @@ export default function SellOrderPreview() {
         <View style={styles.headerRight} />
       </View>
       
-      {/* Amount display with logo */}
+      {/* Shares quantity display with logo */}
       <View style={styles.amountContainer}>
-        <Text style={styles.amountText}>${amount}</Text>
+        <Text style={styles.sharesText}>{shares} shares</Text>
+        <Text style={styles.amountText}>${formattedOrderValue}</Text>
         <View style={styles.logoContainer}>
           {stockSymbol === 'AAPL' ? (
             <Ionicons name="logo-apple" size={40} color="#000" style={styles.logo} />
@@ -127,10 +164,10 @@ export default function SellOrderPreview() {
           
           {/* Order details */}
           <OrderDetailRow label="Order type" value={"Market sell"} />
-          <OrderDetailRow label="No. of shares (est)" value={formattedShares} />
-          <OrderDetailRow label="Latest price" value={`$${stockPrice}`} />
-          <OrderDetailRow label="Order value" value={`$${parseFloat(amount).toFixed(2)}`} />
-          <OrderDetailRow label="Execution fee" value={executionFee.toFixed(2)} />
+          <OrderDetailRow label="Number of shares to sell" value={formattedShares} />
+          <OrderDetailRow label="Price per share" value={`$${stockPrice}`} />
+          <OrderDetailRow label="Total value" value={`$${formattedOrderValue}`} />
+          <OrderDetailRow label="Execution fee" value={`$${executionFee.toFixed(2)}`} />
           <OrderDetailRow label="Purification value (%)" value={`${purificationValue}%`} />
           
           <Divider />
@@ -188,11 +225,17 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
     backgroundColor: '#F8F9FA',
   },
+  sharesText: {
+    fontSize: 24,
+    fontWeight: '500',
+    color: '#64748B',
+    marginBottom: 4,
+  },
   amountText: {
-    fontSize: 40,
-    fontWeight: '700',
+    fontSize: 36,
+    fontWeight: '600',
     color: '#1E293B',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   logoContainer: {
     width: 60,

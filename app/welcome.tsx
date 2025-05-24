@@ -44,7 +44,7 @@ export default function Welcome() {
         setAvatarInitials(initials.toUpperCase());
       }
     } catch (error) {
-      console.error('Error fetching profile:', error);
+      console.log('Profile fetch issue:', error);
     } finally {
       setLoading(false);
     }

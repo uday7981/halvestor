@@ -17,6 +17,7 @@ import OrderTypeModal from '../components/OrderTypeModal';
 import LimitOrderView from '../components/LimitOrderView';
 import { getStockByTicker } from '../services/stockService';
 import { placeMarketOrder } from '../services/orderService';
+import { getUserProfile } from '../services/profileService';
 
 // Reusable components for modularity
 const NumPadButton = ({ 
@@ -57,6 +58,7 @@ const OrderTypeSelector = ({
 export default function BuyStock() {
   const params = useLocalSearchParams();
   const stockSymbol = params.symbol as string || '';
+  const stock_id = params.stock_id as string || '';
   
   const [stock, setStock] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -64,9 +66,42 @@ export default function BuyStock() {
   const [amount, setAmount] = useState('');
   const [orderType, setOrderType] = useState('Market order');
   const [orderTypeModalVisible, setOrderTypeModalVisible] = useState(false);
-  const [availableBalance, setAvailableBalance] = useState(10000); // Mock balance for now
+  const [availableBalance, setAvailableBalance] = useState(0);
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [calculatedShares, setCalculatedShares] = useState(0);
   
+  // Fetch user profile and cash balance
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        setLoadingProfile(true);
+        const { profile, error } = await getUserProfile();
+        
+        if (error) {
+          console.log('Error fetching user profile:', error);
+          // Default to 0 if there's an error
+          setAvailableBalance(0);
+        } else if (profile) {
+          // Set the available balance from the user's profile
+          const cashBalance = profile.cash_balance || 0;
+          setAvailableBalance(cashBalance);
+          console.log('User cash balance:', cashBalance);
+        } else {
+          // Default to 0 if no profile is found
+          setAvailableBalance(0);
+        }
+      } catch (err) {
+        console.log('Exception fetching user profile:', err);
+        setAvailableBalance(0);
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+    
+    fetchUserProfile();
+  }, []);
+
+  // Fetch stock data
   useEffect(() => {
     const fetchStockData = async () => {
       if (!stockSymbol) {
@@ -131,13 +166,34 @@ export default function BuyStock() {
   const handleBuyMax = () => {
     if (stock?.price && availableBalance > 0) {
       // Set amount to max available balance (minus a small buffer for fees)
-      const maxAmount = (availableBalance - 0.50).toFixed(2);
+      // Ensure we don't go negative with the buffer
+      const buffer = 0.50; // Small buffer for fees
+      const maxAmount = Math.max(0, availableBalance - buffer).toFixed(2);
       setAmount(maxAmount);
+      console.log('Setting max buy amount:', maxAmount, 'from available balance:', availableBalance);
+    } else {
+      // If no balance or stock price, show a message
+      if (!loadingProfile) {
+        Alert.alert('Insufficient Balance', 'You do not have enough cash balance to buy this stock.');
+      }
     }
   };
   
   const handlePreviewOrder = () => {
     if (amount && stock) {
+      // Validate the amount against available balance
+      const parsedAmount = parseFloat(amount);
+      
+      if (parsedAmount <= 0) {
+        Alert.alert('Invalid Amount', 'Please enter an amount greater than zero.');
+        return;
+      }
+      
+      if (parsedAmount > availableBalance) {
+        Alert.alert('Insufficient Balance', `You only have $${availableBalance.toFixed(2)} available. Please enter a smaller amount.`);
+        return;
+      }
+      
       // Navigate to order preview screen
       router.push({
         pathname: 'stocks/order-preview' as any,
@@ -148,9 +204,11 @@ export default function BuyStock() {
           amount: amount,
           shares: calculatedShares.toFixed(8),
           orderType: orderType,
-          stock_id: stock.id
+          stock_id: stock_id || stock.id
         }
       });
+    } else {
+      Alert.alert('Missing Information', 'Please enter an amount to proceed.');
     }
   };
   
@@ -169,8 +227,19 @@ export default function BuyStock() {
         </Text>
         
         <View style={styles.balanceContainer}>
-          <Text style={styles.balanceText}>${availableBalance.toFixed(2)} available</Text>
-          <TouchableOpacity style={styles.buyMaxButton} onPress={handleBuyMax}>
+          {loadingProfile ? (
+            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+              <ActivityIndicator size="small" color="#0284c7" />
+              <Text style={[styles.balanceText, {marginLeft: 8}]}>Loading balance...</Text>
+            </View>
+          ) : (
+            <Text style={styles.balanceText}>${availableBalance.toFixed(2)} available</Text>
+          )}
+          <TouchableOpacity 
+            style={[styles.buyMaxButton, {opacity: availableBalance > 0 ? 1 : 0.5}]} 
+            onPress={handleBuyMax}
+            disabled={availableBalance <= 0 || loadingProfile}
+          >
             <Text style={styles.buyMaxText}>Buy max</Text>
           </TouchableOpacity>
         </View>

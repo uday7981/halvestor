@@ -34,7 +34,7 @@ export default function Portfolio() {
       const { profile, error } = await getUserProfile();
       
       if (error) {
-        console.error('Error fetching profile:', error);
+        console.log('Profile fetch issue:', error);
         return;
       }
       

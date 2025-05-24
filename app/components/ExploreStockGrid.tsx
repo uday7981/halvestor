@@ -16,92 +16,72 @@ const ExploreStockGrid = ({
   isCompliant,
   onPress,
 }: ExploreStockGridProps) => {
+  // Get the appropriate logo component based on stock symbol
+  const renderLogo = () => {
+    switch (symbol) {
+      case 'GOOGL':
+        return (
+          <View style={styles.logoContainer}>
+            <Text style={styles.logoText}>G</Text>
+          </View>
+        );
+      case 'AAPL':
+        return (
+          <View style={styles.logoContainer}>
+            <Text style={styles.logoText}>🍎</Text>
+          </View>
+        );
+      case 'AMZN':
+        return (
+          <View style={[styles.logoContainer, { backgroundColor: '#FF9900' }]}>
+            <Text style={[styles.logoText, { color: '#000' }]}>a</Text>
+          </View>
+        );
+      case 'NVDA':
+        return (
+          <View style={[styles.logoContainer, { backgroundColor: '#76B900' }]}>
+            <Text style={[styles.logoText, { color: '#FFF' }]}>N</Text>
+          </View>
+        );
+      default:
+        return (
+          <View style={styles.logoContainer}>
+            <Text style={styles.logoText}>{symbol.charAt(0)}</Text>
+          </View>
+        );
+    }
+  };
+
   return (
     <TouchableOpacity style={styles.container} onPress={onPress}>
       <View style={styles.content}>
-        <View style={styles.logoPlaceholder}>
-          {symbol === 'GOOGL' && (
-            <View style={styles.googleLogo}>
-              <Text style={[styles.googleText, { color: '#4285F4' }]}>G</Text>
-              <Text style={[styles.googleText, { color: '#EA4335' }]}>o</Text>
-              <Text style={[styles.googleText, { color: '#FBBC05' }]}>o</Text>
-              <Text style={[styles.googleText, { color: '#4285F4' }]}>g</Text>
-              <Text style={[styles.googleText, { color: '#34A853' }]}>l</Text>
-              <Text style={[styles.googleText, { color: '#EA4335' }]}>e</Text>
-            </View>
-          )}
-          {symbol === 'AAPL' && (
-            <View style={styles.appleLogo}>
-              <Text style={styles.appleText}>🍎</Text>
-            </View>
-          )}
-          {symbol === 'AMZN' && (
-            <View style={styles.amazonLogo}>
-              <Text style={styles.amazonText}>a</Text>
-            </View>
-          )}
-          {symbol === 'NVDA' && (
-            <View style={styles.nvidiaLogo}>
-              <Text style={styles.nvidiaText}>N</Text>
-            </View>
-          )}
-          {symbol === 'SPOT' && (
-            <View style={styles.spotifyLogo}>
-              <Text style={styles.spotifyText}>♫</Text>
-            </View>
-          )}
-          {symbol === 'MSFT' && (
-            <View style={styles.microsoftLogo}>
-              <Text style={styles.microsoftText}>□</Text>
-            </View>
-          )}
-          {symbol === 'TSLA' && (
-            <View style={styles.teslaLogo}>
-              <Text style={styles.teslaText}>T</Text>
-            </View>
-          )}
-          {symbol === 'FIGM' && (
-            <View style={styles.figmaLogo}>
-              <Text style={styles.figmaText}>F</Text>
-            </View>
-          )}
-          {symbol === 'FRMR' && (
-            <View style={styles.framerLogo}>
-              <Text style={styles.framerText}>Fr</Text>
-            </View>
-          )}
-          {!['GOOGL', 'AAPL', 'AMZN', 'NVDA', 'SPOT', 'MSFT', 'TSLA', 'FIGM', 'FRMR'].includes(symbol) && (
-            <Text style={styles.logoText}>{symbol.charAt(0)}</Text>
-          )}
-        </View>
+        {/* Logo section */}
+        {renderLogo()}
         
-        <View style={styles.infoContainer}>
-          <Text style={styles.name}>{name}</Text>
+        {/* Company info section */}
+        <View style={styles.infoSection}>
+          <Text style={styles.name} numberOfLines={1}>{name}</Text>
           <Text style={styles.symbol}>{symbol}</Text>
         </View>
         
-        <View style={styles.priceContainer}>
-          <Text style={styles.price}>${price}</Text>
-          <View style={styles.changeContainer}>
-            <View style={[styles.changeIndicator, isPositive ? styles.positiveIndicator : styles.negativeIndicator]} />
-            <Text style={[styles.change, isPositive ? styles.positive : styles.negative]}>
-              ${change} ({changePercent}%)
-            </Text>
-          </View>
+        {/* Price section */}
+        <Text style={styles.price}>{price}</Text>
+        
+        {/* Change section */}
+        <View style={[styles.changeContainer, isPositive ? styles.positiveChange : styles.negativeChange]}>
+          <Text style={[styles.changeText, { color: '#FFF' }]}>
+            {isPositive ? '+' : ''}{change} ({changePercent}%)
+          </Text>
         </View>
         
-        <View style={styles.complianceContainer}>
-          <View style={[
-            styles.complianceBadge, 
-            isCompliant ? styles.compliantBadge : styles.nonCompliantBadge
+        {/* Compliance badge */}
+        <View style={[styles.complianceBadge, isCompliant ? styles.compliantBadge : styles.nonCompliantBadge]}>
+          <Text style={[
+            styles.complianceText,
+            isCompliant ? styles.compliantText : styles.nonCompliantText
           ]}>
-            <Text style={[
-              styles.complianceText, 
-              isCompliant ? styles.compliantText : styles.nonCompliantText
-            ]}>
-              {isCompliant ? 'COMPLIANT' : 'NON-COMPLIANT'}
-            </Text>
-          </View>
+            {isCompliant ? 'COMPLIANT' : 'NON-COMPLIANT'}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -110,192 +90,79 @@ const ExploreStockGrid = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    width: '48%',
-    height: 220,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 10,
+    marginHorizontal: 5,
+    width: '47%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 2,
   },
   content: {
-    flex: 1,
-    justifyContent: 'space-between',
+    padding: 12,
+    alignItems: 'flex-start',
   },
-  logoPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+  logoContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F1F5F9',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   logoText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: '#64748B',
   },
-  googleLogo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  googleText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  appleLogo: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  appleText: {
-    fontSize: 20,
-  },
-  amazonLogo: {
-    backgroundColor: '#FF9900',
+  infoSection: {
     width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  amazonText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  nvidiaLogo: {
-    backgroundColor: '#76B900',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  nvidiaText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  spotifyLogo: {
-    backgroundColor: '#1DB954',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  spotifyText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  microsoftLogo: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  microsoftText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#00A4EF',
-  },
-  teslaLogo: {
-    backgroundColor: '#E82127',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  teslaText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  figmaLogo: {
-    backgroundColor: '#F24E1E',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  figmaText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  framerLogo: {
-    backgroundColor: '#0055FF',
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 8,
-  },
-  framerText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  infoContainer: {
     marginBottom: 8,
   },
   name: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     color: '#0F172A',
     marginBottom: 2,
   },
   symbol: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#94A3B8',
-  },
-  priceContainer: {
-    marginBottom: 12,
+    marginBottom: 8,
   },
   price: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#0F172A',
-    marginBottom: 4,
+    marginBottom: 8,
   },
   changeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  changeIndicator: {
-    width: 8,
-    height: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderRadius: 4,
-    marginRight: 4,
+    marginBottom: 8,
+    alignSelf: 'flex-start',
   },
-  positiveIndicator: {
+  positiveChange: {
     backgroundColor: '#10B981',
   },
-  negativeIndicator: {
+  negativeChange: {
     backgroundColor: '#EF4444',
   },
-  change: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  positive: {
-    color: '#10B981',
-  },
-  negative: {
-    color: '#EF4444',
-  },
-  complianceContainer: {
-    alignItems: 'flex-start',
+  changeText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   complianceBadge: {
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
+    alignSelf: 'flex-start',
   },
   compliantBadge: {
     backgroundColor: 'rgba(16, 185, 129, 0.1)',

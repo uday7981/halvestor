@@ -57,7 +57,7 @@ const ExploreStockItem = ({
       </View>
       
       <View style={styles.priceContainer}>
-        <Text style={styles.price}>${price}</Text>
+        <Text style={styles.price}>{price}</Text>
         <Text style={[
           styles.change,
           isPositive ? styles.positiveChange : styles.negativeChange

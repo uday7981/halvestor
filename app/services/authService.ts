@@ -5,8 +5,8 @@ type ErrorWithMessage = {
   message: string;
 };
 
-// Email sign up with first name and last name
-export const signUpWithEmail = async (email: string, password: string, firstName: string, lastName: string) => {
+// Email sign up with first name, last name and country
+export const signUpWithEmail = async (email: string, password: string, firstName: string, lastName: string, country: string = 'United Kingdom') => {
   try {
     console.log('Starting signup process for:', email);
     
@@ -18,6 +18,7 @@ export const signUpWithEmail = async (email: string, password: string, firstName
         data: {
           first_name: firstName,
           last_name: lastName,
+          country: country,
         },
       },
     });
@@ -33,68 +34,8 @@ export const signUpWithEmail = async (email: string, password: string, firstName
     const data = signUpResponse.data;
     console.log('User created with ID:', data?.user?.id);
     
-    // Step 2: Create a profile entry for the user if we have a user ID
-    if (data?.user?.id) {
-      console.log('Creating profile for user:', data.user.id);
-      
-      try {
-        // First check if a profile already exists
-        const { data: existingProfile, error: checkError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', data.user.id)
-          .single();
-          
-        if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is the "not found" error code
-          console.error('Error checking for existing profile:', checkError.message);
-        }
-        
-        if (!existingProfile) {
-          // Profile doesn't exist, create it
-          const profileResponse = await supabase
-            .from('profiles')
-            .insert({
-              id: data.user.id,
-              first_name: firstName,
-              last_name: lastName,
-              cash_balance: 500.00,
-              first_login: true,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            });
-          
-          if (profileResponse.error) {
-            console.error('Profile creation error:', profileResponse.error.message);
-            console.warn('Continuing despite profile creation error');
-          } else {
-            console.log('Profile created successfully with cash balance: 500.00');
-          }
-        } else {
-          console.log('Profile already exists for user, skipping creation');
-        }
-      } catch (profileError) {
-        console.error('Exception during profile creation:', profileError);
-        console.warn('Continuing despite profile creation exception');
-      }
-      
-      // Step 3: Update the user metadata in case it didn't save during signup
-      try {
-        const updateResponse = await supabase.auth.updateUser({
-          data: {
-            first_name: firstName,
-            last_name: lastName,
-          }
-        });
-        
-        if (updateResponse.error) {
-          console.error('Error updating user metadata:', updateResponse.error.message);
-        } else {
-          console.log('User metadata updated successfully');
-        }
-      } catch (updateError) {
-        console.error('Exception during metadata update:', updateError);
-      }
-    }
+    // We'll skip profile creation here and do it during email verification
+    // This ensures the user has a valid session when creating the profile
     
     console.log('Signup process completed successfully');
     return { data, error: null };
@@ -158,14 +99,27 @@ export const verifyOTP = async (email: string, token: string) => {
     }
     
     // After successful verification, ensure the user has a profile
-    // This allows us to skip the user profile screen
+    // This is the main place we create the profile since the user now has a valid session
     try {
+      // Wait a moment to ensure the session is fully established
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
       const { data: userData } = await supabase.auth.getUser();
       
       if (userData?.user?.id) {
+        console.log('Creating profile after verification for user:', userData.user.id);
+        
         // Get user metadata
         const firstName = userData.user.user_metadata?.first_name || 'New';
         const lastName = userData.user.user_metadata?.last_name || 'User';
+        const country = userData.user.user_metadata?.country || 'United Kingdom';
+        
+        console.log('User metadata for profile creation:', {
+          firstName,
+          lastName,
+          country,
+          userId: userData.user.id
+        });
         
         // First check if a profile already exists
         const { data: existingProfile, error: checkError } = await supabase
@@ -174,18 +128,25 @@ export const verifyOTP = async (email: string, token: string) => {
           .eq('id', userData.user.id)
           .single();
           
-        if (checkError && checkError.code !== 'PGRST116') { // PGRST116 is the "not found" error code
+        // Only log non-PGRST116 errors as actual errors
+        // PGRST116 means "no rows found" which is expected for new users
+        if (checkError && checkError.code !== 'PGRST116') {
           console.error('Error checking for existing profile during verification:', checkError.message);
         }
         
         if (!existingProfile) {
-          // Profile doesn't exist, create it with INSERT instead of UPSERT
+          // Try with the service role client if available
+          // If using the service role isn't an option, we'll use the regular client
+          // and rely on the updated RLS policy
+          
+          // Profile doesn't exist, create it
           const { error: profileError } = await supabase
             .from('profiles')
             .insert({
               id: userData.user.id,
               first_name: firstName,
               last_name: lastName,
+              country: country,
               cash_balance: 500.00, // Explicitly set cash balance to 500
               first_login: true,
               created_at: new Date().toISOString(),
@@ -193,7 +154,16 @@ export const verifyOTP = async (email: string, token: string) => {
             });
           
           if (profileError) {
-            console.error('Profile creation error during verification:', profileError.message);
+            // Check if it's a duplicate key error, which is actually fine (means profile already exists)
+            if (profileError.code === '23505') { // PostgreSQL duplicate key error
+              console.log('Profile already exists (duplicate key), continuing with verification');
+            } else {
+              // Only log non-duplicate key errors as actual errors
+              console.log('Profile creation during verification had an issue:', profileError.message);
+              
+              // Don't fail the verification process
+              console.log('Continuing verification process despite profile creation issue');
+            }
           } else {
             console.log('Profile created successfully during verification with cash balance: 500.00');
           }

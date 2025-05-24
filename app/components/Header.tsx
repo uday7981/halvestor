@@ -22,7 +22,7 @@ const Header = ({ username, avatarInitials }: HeaderProps) => {
       'U');
   
   const handleAvatarPress = () => {
-    router.push('/profile');
+    router.push('/user/profile');
   };
 
   return (

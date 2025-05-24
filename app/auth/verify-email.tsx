@@ -10,7 +10,8 @@ import {
   Platform, 
   Keyboard,
   Alert,
-  Dimensions
+  Dimensions,
+  ActivityIndicator
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -18,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { verifyOTP } from '../services/authService';
 import AuthButton from '../components/AuthButton';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 export default function VerifyEmail() {
   const params = useLocalSearchParams();
@@ -29,8 +30,26 @@ export default function VerifyEmail() {
   const [isResending, setIsResending] = useState(false);
   const [isTimerRunning, setIsTimerRunning] = useState(true);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   
   const inputRefs = useRef<Array<TextInput | null>>([]);
+  
+  // Detect keyboard visibility
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener(
+      'keyboardDidShow',
+      () => setKeyboardVisible(true)
+    );
+    const keyboardDidHideListener = Keyboard.addListener(
+      'keyboardDidHide',
+      () => setKeyboardVisible(false)
+    );
+
+    return () => {
+      keyboardDidShowListener.remove();
+      keyboardDidHideListener.remove();
+    };
+  }, []);
   
   // Start countdown timer
   useEffect(() => {
@@ -48,6 +67,13 @@ export default function VerifyEmail() {
       if (interval) clearInterval(interval);
     };
   }, [timer, isTimerRunning]);
+  
+  // Format timer as MM:SS
+  const formatTime = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
   
   const handleResendCode = () => {
     if (timer === 0) {
@@ -77,6 +103,11 @@ export default function VerifyEmail() {
     if (text.length === 1 && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
+    
+    // If all fields are filled, hide keyboard
+    if (text.length === 1 && index === 5) {
+      Keyboard.dismiss();
+    }
   };
   
   const handleKeyPress = (e: any, index: number) => {
@@ -86,13 +117,15 @@ export default function VerifyEmail() {
     }
   };
   
+  const isOtpComplete = otp.every(digit => digit !== '');
+  
   const handleBack = () => {
     router.back();
   };
   
   const handleContinue = async () => {
     // Check if OTP is complete
-    if (!otp.every(digit => digit !== '')) {
+    if (!isOtpComplete) {
       Alert.alert('Error', 'Please enter the complete verification code');
       return;
     }
@@ -125,8 +158,9 @@ export default function VerifyEmail() {
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidView}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 40 : 0}
       >
-        <TouchableOpacity style={styles.backButton} onPress={handleBack}>
+        <TouchableOpacity style={styles.backButton} onPress={handleBack} accessible={true} accessibilityLabel="Go back">
           <Ionicons name="chevron-back" size={24} color="#1E293B" />
         </TouchableOpacity>
         
@@ -138,40 +172,56 @@ export default function VerifyEmail() {
           </Text>
         </View>
         
-        <View style={styles.otpContainer}>
-          {otp.map((digit, index) => (
-            <TextInput
-              key={index}
-              ref={(ref) => inputRefs.current[index] = ref}
-              style={styles.otpInput}
-              value={digit}
-              onChangeText={(text) => handleOtpChange(text, index)}
-              onKeyPress={(e) => handleKeyPress(e, index)}
-              keyboardType="number-pad"
-              maxLength={1}
-              autoFocus={index === 0}
-              selectTextOnFocus
-            />
-          ))}
+        <View style={styles.otpWrapper}>
+          <View style={styles.otpContainer}>
+            {otp.map((digit, index) => (
+              <TextInput
+                key={index}
+                ref={(ref) => inputRefs.current[index] = ref}
+                style={[styles.otpInput, digit ? styles.otpInputFilled : {}]}
+                value={digit}
+                onChangeText={(text) => handleOtpChange(text, index)}
+                onKeyPress={(e) => handleKeyPress(e, index)}
+                keyboardType="number-pad"
+                maxLength={1}
+                autoFocus={index === 0}
+                selectTextOnFocus
+                accessible={true}
+                accessibilityLabel={`Digit ${index + 1} of verification code`}
+              />
+            ))}
+          </View>
         </View>
         
         <View style={styles.resendContainer}>
-          <Text style={styles.resendText}>
-            Didn't receive the code? <Text style={styles.resendLink} onPress={handleResendCode}>
-              Resend in {isTimerRunning ? timer : 0}:{isTimerRunning ? '30' : '00'}
+          {isResending ? (
+            <ActivityIndicator size="small" color="#3B82F6" />
+          ) : (
+            <Text style={styles.resendText}>
+              Didn't receive the code?{' '}
+              <Text 
+                style={[styles.resendLink, timer === 0 ? styles.resendActive : styles.resendInactive]} 
+                onPress={handleResendCode}
+                accessible={true}
+                accessibilityLabel={timer === 0 ? "Resend verification code" : `Wait ${formatTime(timer)} before resending`}
+              >
+                Resend {timer > 0 ? `in ${formatTime(timer)}` : 'now'}
+              </Text>
             </Text>
-          </Text>
+          )}
         </View>
         
-        <AuthButton
-          title="Continue"
-          onPress={handleContinue}
-          disabled={isVerifying || !otp.every(digit => digit !== '')}
-          loading={isVerifying}
-          style={styles.continueButton}
-          textStyle={styles.continueButtonText}
-          variant="primary"
-        />
+        <View style={styles.buttonContainer}>
+          <AuthButton
+            title="Continue"
+            onPress={handleContinue}
+            disabled={isVerifying || !isOtpComplete}
+            loading={isVerifying}
+            style={[styles.continueButton, isOtpComplete ? styles.continueButtonActive : {}]}
+            textStyle={styles.continueButtonText}
+            variant="primary"
+          />
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -196,7 +246,7 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   header: {
-    marginBottom: 60,
+    marginBottom: 40,
   },
   title: {
     fontSize: 28,
@@ -209,26 +259,43 @@ const styles = StyleSheet.create({
     color: '#64748B',
     lineHeight: 24,
   },
+  otpWrapper: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
   otpContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 40,
-    paddingHorizontal: 10,
+    justifyContent: 'center',
+    marginBottom: 20,
+    width: '100%',
+    maxWidth: 400,
   },
   otpInput: {
-    width: (width - 80) / 6,
-    height: (width - 80) / 6,
-    borderWidth: 0,
-    borderRadius: (width - 80) / 12,
+    width: Math.min((width - 100) / 6, 50),
+    height: Math.min((width - 100) / 6, 50),
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
     textAlign: 'center',
     fontSize: 20,
     fontWeight: '600',
     color: '#1E293B',
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#F8FAFC',
+    marginHorizontal: 5,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 1,
+  },
+  otpInputFilled: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#3B82F6',
   },
   resendContainer: {
     alignItems: 'center',
     marginBottom: 40,
+    paddingVertical: 10,
   },
   resendText: {
     fontSize: 14,
@@ -240,10 +307,25 @@ const styles = StyleSheet.create({
     color: '#3B82F6',
     fontWeight: '500',
   },
-  continueButton: {
+  resendActive: {
+    color: '#3B82F6',
+    fontWeight: '600',
+  },
+  resendInactive: {
+    color: '#94A3B8',
+  },
+  buttonContainer: {
+    width: '100%',
     marginTop: 'auto',
+    marginBottom: Platform.OS === 'ios' ? 20 : 10,
+  },
+  continueButton: {
     backgroundColor: '#BFDBFE',
     borderRadius: 100,
+    paddingVertical: 16,
+  },
+  continueButtonActive: {
+    backgroundColor: '#3B82F6',
   },
   continueButtonText: {
     color: '#1E293B',

@@ -22,13 +22,36 @@ export interface Order {
 export interface MarketOrderParams {
   stock_id: string;
   transaction_type: 'buy' | 'sell';
-  quantity: number;
+  quantity?: number;     // Optional: Quantity of shares (used when directly specifying shares)
+  amount?: number;       // Optional: Dollar amount to buy/sell (will calculate quantity based on price)
+  // Either quantity OR amount must be provided
 }
 
 /**
- * Place a market order
+ * Place a market order (buy or sell)
+ * 
+ * For buy orders:
+ * 1. Get current market price
+ * 2. Check if user has sufficient cash
+ * 3. Create order with 'completed' status
+ * 4. Record transaction
+ * 5. Update holdings (create or increase)
+ * 6. Decrease cash balance
+ * 
+ * For sell orders:
+ * 1. Get current market price
+ * 2. Check if user has sufficient holdings
+ * 3. Create order with 'completed' status
+ * 4. Record transaction
+ * 5. Update holdings (decrease or remove)
+ * 6. Increase cash balance
+ * 7. Calculate and log realized P&L
  */
-export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ data: Order | null, error: string | null, updatedCashBalance?: number }> => {
+export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ data: Order | null, error: string | null, updatedCashBalance?: number, realizedPL?: number }> => {
+  // Declare variables that will be used for sell orders
+  let realizedPL: number | undefined;
+  let avgBuyPrice: number | undefined;
+  
   try {
     const user = await supabase.auth.getUser();
     const userId = user.data.user?.id;
@@ -56,8 +79,26 @@ export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ dat
       return { data: null, error: 'Stock price not available' };
     }
     
-    // Calculate total amount
-    const totalAmount = params.quantity * currentPrice;
+    // Calculate quantity and total amount based on input parameters
+    let quantity: number;
+    let totalAmount: number;
+    
+    if (params.quantity !== undefined) {
+      // If quantity is provided directly
+      quantity = params.quantity;
+      totalAmount = quantity * currentPrice;
+    } else if (params.amount !== undefined) {
+      // If dollar amount is provided, calculate the quantity
+      totalAmount = params.amount;
+      quantity = totalAmount / currentPrice;
+      
+      // Round to 8 decimal places for crypto or 4 for stocks
+      quantity = parseFloat(quantity.toFixed(8));
+      
+      console.log(`Converting $${totalAmount} to ${quantity} shares at price $${currentPrice}`);
+    } else {
+      return { data: null, error: 'Either quantity or amount must be provided' };
+    }
     
     // Check if user has enough cash for buy orders
     if (params.transaction_type === 'buy') {
@@ -80,21 +121,30 @@ export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ dat
     
     // For sell orders, check if user has enough quantity
     if (params.transaction_type === 'sell') {
+      console.log('Validating sell order for stock_id:', params.stock_id, 'quantity:', quantity);
+      
       const { data: holding, error: holdingError } = await supabase
         .from('holdings')
-        .select('quantity')
+        .select('*')
         .eq('user_id', userId)
         .eq('stock_id', params.stock_id)
         .maybeSingle();
       
-      if (holdingError && holdingError.code !== 'PGRST116') {
-        console.error('Error checking holdings:', holdingError);
+      if (holdingError) {
+        console.error('Error checking holdings for sell validation:', holdingError);
         return { data: null, error: `Error checking holdings: ${holdingError.message}` };
       }
       
-      const quantity = Number(holding?.quantity || 0);
-      if (quantity < params.quantity) {
-        return { data: null, error: 'Not enough quantity to sell' };
+      if (!holding) {
+        console.error('No holdings found for this stock');
+        return { data: null, error: 'You do not own any shares of this stock' };
+      }
+      
+      const currentQuantity = Number(holding.quantity || 0);
+      console.log('Current holding quantity:', currentQuantity, 'Attempting to sell:', quantity);
+      
+      if (currentQuantity < quantity) {
+        return { data: null, error: `Not enough shares to sell. You own ${currentQuantity} shares.` };
       }
     }
     
@@ -106,7 +156,7 @@ export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ dat
         stock_id: params.stock_id,
         order_type: 'market',
         transaction_type: params.transaction_type,
-        quantity: params.quantity,
+        quantity: quantity,
         price_per_share: currentPrice,
         status: 'completed',
         executed_at: new Date().toISOString()
@@ -121,18 +171,29 @@ export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ dat
     
     console.log('Order created:', order.id);
     
-    // Record the transaction
+    // Record the transaction with additional metadata for sell orders
+    const transactionData = {
+      order_id: order.id,
+      user_id: userId,
+      stock_id: params.stock_id,
+      transaction_type: params.transaction_type,
+      quantity: quantity,
+      price_per_share: currentPrice,
+      total_amount: totalAmount,
+      // Additional fields will be added for sell orders
+    };
+    
+    // For sell orders, add realized P&L information if available
+    if (params.transaction_type === 'sell' && typeof realizedPL !== 'undefined') {
+      Object.assign(transactionData, {
+        realized_pl: realizedPL,
+        avg_buy_price: avgBuyPrice
+      });
+    }
+    
     const { error: transactionError } = await supabase
       .from('transactions')
-      .insert({
-        order_id: order.id,
-        user_id: userId,
-        stock_id: params.stock_id,
-        transaction_type: params.transaction_type,
-        quantity: params.quantity,
-        price_per_share: currentPrice,
-        total_amount: totalAmount
-      });
+      .insert(transactionData);
     
     if (transactionError) {
       console.error('Error recording transaction:', transactionError);
@@ -156,12 +217,14 @@ export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ dat
       
       if (existingHolding) {
         // Update existing holding
-        const newShares = Number(existingHolding.quantity || 0) + Number(params.quantity);
+        const newShares = Number(existingHolding.quantity || 0) + quantity;
+        const newAvgPrice = ((Number(existingHolding.quantity || 0) * Number(existingHolding.avg_buy_price || 0)) + totalAmount) / newShares;
         
         const { error: updateError } = await supabase
           .from('holdings')
           .update({
-            quantity: newShares
+            quantity: newShares,
+            avg_buy_price: newAvgPrice
           })
           .eq('id', existingHolding.id);
         
@@ -176,7 +239,8 @@ export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ dat
           .insert({
             user_id: userId,
             stock_id: params.stock_id,
-            quantity: Number(params.quantity)
+            quantity: quantity,
+            avg_buy_price: currentPrice
           });
         
         if (insertError) {
@@ -211,7 +275,9 @@ export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ dat
         }
       }
     } else if (params.transaction_type === 'sell') {
-      // Update holdings for sell
+      console.log('Processing sell order for stock_id:', params.stock_id, 'quantity:', quantity);
+      
+      // Update holdings for sell - we already validated the holding exists in the validation step
       const { data: existingHolding, error: holdingError } = await supabase
         .from('holdings')
         .select('*')
@@ -220,38 +286,113 @@ export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ dat
         .single();
       
       if (holdingError) {
-        console.error('Error checking holdings for sell:', holdingError);
-        // Continue even if there's an error
-      } else {
-        // Update holding
-        const newShares = Number(existingHolding.quantity || 0) - Number(params.quantity);
+        console.error('Error retrieving holdings for sell processing:', holdingError);
+        return { data: null, error: `Error updating holdings: ${holdingError.message}` };
+      }
+      
+      if (!existingHolding) {
+        console.error('No holdings found for this stock during sell processing');
+        return { data: null, error: 'You do not own any shares of this stock' };
+      }
+      
+      // Calculate new shares after selling
+      const currentQuantity = Number(existingHolding.quantity || 0);
+      const newQuantity = currentQuantity - quantity;
+      
+      // Calculate realized profit/loss
+      const avgBuyPrice = Number(existingHolding.avg_buy_price || 0);
+      const sellPrice = currentPrice;
+      const realizedPL = (sellPrice - avgBuyPrice) * quantity;
+      const isProfitable = realizedPL >= 0;
+      
+      console.log('Sell order details:');
+      console.log('- Current quantity:', currentQuantity);
+      console.log('- Selling quantity:', quantity);
+      console.log('- New quantity after sell:', newQuantity);
+      console.log('- Average buy price:', avgBuyPrice);
+      console.log('- Current sell price:', sellPrice);
+      console.log(`- Realized ${isProfitable ? 'profit' : 'loss'}:`, realizedPL.toFixed(2));
+      
+      if (newQuantity > 0) {
+        // Update existing holding
+        console.log(`Updating holding ID ${existingHolding.id} to quantity ${newQuantity}`);
+        const { error: updateError } = await supabase
+          .from('holdings')
+          .update({
+            quantity: newQuantity,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingHolding.id);
         
-        if (newShares > 0) {
-          // Update existing holding
-          const { error: updateError } = await supabase
-            .from('holdings')
-            .update({
-              quantity: newShares
-            })
-            .eq('id', existingHolding.id);
+        if (updateError) {
+          console.error('Error updating holdings for sell:', updateError);
+          return { data: null, error: `Error updating holdings: ${updateError.message}` };
+        }
+        
+        console.log('Successfully updated holdings with new quantity:', newQuantity);
+        
+        // Verify the update worked
+        const { data: verifyHolding, error: verifyError } = await supabase
+          .from('holdings')
+          .select('quantity')
+          .eq('id', existingHolding.id)
+          .single();
           
-          if (updateError) {
-            console.error('Error updating holdings for sell:', updateError);
-            // Continue even if there's an error
-          }
+        if (verifyError) {
+          console.error('Error verifying holding update:', verifyError);
         } else {
-          // Remove holding if quantity is zero
-          const { error: deleteError } = await supabase
+          console.log('Verified holding quantity after update:', verifyHolding.quantity);
+        }
+      } else {
+        // Remove holding if quantity is zero or negative (should be exactly zero)
+        console.log(`Deleting holding ID ${existingHolding.id} as quantity is now ${newQuantity}`);
+        console.log(`Holding details: stock_id=${existingHolding.stock_id}, user_id=${existingHolding.user_id}`);
+        
+        // First attempt with ID
+        const { error: deleteError } = await supabase
+          .from('holdings')
+          .delete()
+          .eq('id', existingHolding.id);
+        
+        if (deleteError) {
+          console.error('Error deleting holdings by ID:', deleteError);
+          
+          // Try deleting by user_id and stock_id as a fallback
+          console.log('Attempting to delete by user_id and stock_id as fallback');
+          const { error: fallbackDeleteError } = await supabase
             .from('holdings')
             .delete()
-            .eq('id', existingHolding.id);
+            .eq('user_id', userId)
+            .eq('stock_id', params.stock_id);
+            
+          if (fallbackDeleteError) {
+            console.error('Error in fallback delete:', fallbackDeleteError);
+            return { data: null, error: `Error removing holdings: ${fallbackDeleteError.message}` };
+          } else {
+            console.log('Successfully removed holdings using fallback method');
+          }
+        } else {
+          console.log('Successfully removed holdings as quantity is now zero');
+        }
+        
+        // Verify the delete worked
+        const { data: verifyDelete, error: verifyError } = await supabase
+          .from('holdings')
+          .select('id')
+          .eq('id', existingHolding.id);
           
-          if (deleteError) {
-            console.error('Error deleting holdings:', deleteError);
-            // Continue even if there's an error
+        if (verifyError) {
+          console.error('Error verifying holding deletion:', verifyError);
+        } else {
+          if (verifyDelete && verifyDelete.length > 0) {
+            console.error('WARNING: Holding still exists after deletion attempt!');
+          } else {
+            console.log('Verified holding was successfully deleted');
           }
         }
       }
+      
+      console.log('Holdings updated successfully for sell order');
       
       // Get current cash balance
       const { data: currentProfile, error: profileFetchError } = await supabase
@@ -305,14 +446,15 @@ export const placeMarketOrder = async (params: MarketOrderParams): Promise<{ dat
       updatedCashBalance = updatedProfile.cash_balance;
     }
     
-    // Combine the order and stock information
-    return { 
+    // Return the order data, updated cash balance, and realized P&L for sell orders
+    return {
       data: {
         ...order,
         stock: stockDetails
-      }, 
+      },
       error: null,
-      updatedCashBalance 
+      updatedCashBalance,
+      ...(params.transaction_type === 'sell' ? { realizedPL } : {})
     };
   } catch (error) {
     console.error('Error placing market order:', error);

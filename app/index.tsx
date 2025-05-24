@@ -5,7 +5,8 @@ import LogoSVG from './components/LogoSVG';
 import { StatusBar } from 'expo-status-bar';
 
 export default function Index() {
-  const [fadeAnim] = useState(new Animated.Value(1));
+  // Initialize fadeAnim with useMemo to avoid creating a new Animated.Value on each render
+  const fadeAnim = React.useMemo(() => new Animated.Value(1), []);
 
   useEffect(() => {
     // Wait for 2 seconds and then fade out

@@ -4,13 +4,17 @@ import {
   Text, 
   StyleSheet, 
   TouchableOpacity, 
-  SafeAreaView
+  SafeAreaView,
+  ActivityIndicator,
+  Alert
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import { getHoldingByTicker } from '../services/holdingService';
+import { OrderTypeModal } from '../components';
 
-// Reusable components for modularity
+// Reusable component for number pad buttons
 const NumPadButton = ({ 
   value, 
   onPress 
@@ -36,13 +40,16 @@ export default function SharesSellInput() {
   const params = useLocalSearchParams();
   const stockName = params.name as string || 'Apple';
   const stockPrice = params.price as string || '234.27';
-  const limitPrice = params.limitPrice as string || stockPrice;
-  const orderType = params.orderType as string || 'Limit order';
-  const symbol = params.symbol as string || 'AAPL';
-  const availableShares = params.availableShares as string || '10';
+  const symbol = (params.symbol as string || 'AAPL').toUpperCase(); // Ensure ticker is uppercase
   
   const [shares, setShares] = useState('');
   const [cursorVisible, setCursorVisible] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [availableShares, setAvailableShares] = useState('0');
+  const [currentHolding, setCurrentHolding] = useState<number | null>(null);
+  const [orderType, setOrderType] = useState('Market order');
+  const [orderTypeModalVisible, setOrderTypeModalVisible] = useState(false);
+  const [limitPrice, setLimitPrice] = useState(stockPrice);
   const totalAmount = shares ? (parseFloat(shares) * parseFloat(limitPrice)).toFixed(2) : '0.00';
   
   // Blinking cursor effect
@@ -54,8 +61,47 @@ export default function SharesSellInput() {
     return () => clearInterval(cursorInterval);
   }, []);
   
+  // Fetch available shares when component loads
+  useEffect(() => {
+    const fetchAvailableShares = async () => {
+      try {
+        console.log('Automatically fetching available shares for ticker:', symbol);
+        setLoading(true);
+        
+        // Use our new direct function to get holdings by ticker
+        const { data: holding, error } = await getHoldingByTicker(symbol);
+        
+        if (error) {
+          console.error('Error fetching holding by ticker:', error);
+          setAvailableShares('0');
+          return;
+        }
+        
+        if (holding && holding.quantity > 0) {
+          console.log('Found holding with quantity:', holding.quantity);
+          setCurrentHolding(holding.quantity);
+          setAvailableShares(holding.quantity.toString());
+        } else {
+          console.log('No holding found or quantity is 0 for ticker:', symbol);
+          setAvailableShares('0');
+        }
+      } catch (error) {
+        console.error('Exception in fetchAvailableShares:', error);
+        setAvailableShares('0');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchAvailableShares();
+  }, [symbol]);
+  
   const handleBack = () => {
     router.back();
+  };
+  
+  const toggleOrderTypeModal = () => {
+    setOrderTypeModalVisible(!orderTypeModalVisible);
   };
   
   const handleNumPadPress = (value: string) => {
@@ -74,8 +120,44 @@ export default function SharesSellInput() {
     }
   };
   
-  const handleSellMax = () => {
-    setShares(availableShares);
+  const handleSellMax = async () => {
+    try {
+      console.log('Starting Sell Max operation for ticker:', symbol);
+      setLoading(true);
+      
+      // Use our direct function to get holdings by ticker
+      console.log('Fetching holding directly by ticker:', symbol);
+      const { data: holding, error } = await getHoldingByTicker(symbol);
+      
+      if (error) {
+        console.error('Error fetching holding by ticker:', error);
+        Alert.alert('Error', 'Could not fetch your holdings. Please try again.');
+        setAvailableShares('0');
+        return;
+      }
+      
+      if (holding && holding.quantity > 0) {
+        console.log('Found holding with quantity:', holding.quantity);
+        // Set the current holding for reference
+        setCurrentHolding(holding.quantity);
+        // Update the available shares display
+        setAvailableShares(holding.quantity.toString());
+        // Set the shares to the current holding quantity
+        setShares(holding.quantity.toString());
+        console.log('Shares set to:', holding.quantity.toString());
+      } else {
+        console.log('No holding found or quantity is 0 for ticker:', symbol);
+        setAvailableShares('0');
+        setShares('');
+        Alert.alert('No Shares', 'You do not own any shares of this stock.');
+      }
+    } catch (error) {
+      console.error('Exception in handleSellMax:', error);
+      Alert.alert('Error', 'An error occurred while fetching your holdings.');
+      setAvailableShares('0');
+    } finally {
+      setLoading(false);
+    }
   };
   
   const handlePreviewOrder = () => {
@@ -117,14 +199,30 @@ export default function SharesSellInput() {
             {cursorVisible && shares.length === 0 && <View style={styles.cursor} />}
           </View>
           
+          <TouchableOpacity 
+            style={styles.orderTypeSelector}
+            onPress={toggleOrderTypeModal}
+          >
+            <Text style={styles.orderTypeSelectorText}>{orderType}</Text>
+            <Ionicons name="chevron-down" size={16} color="#64748B" />
+          </TouchableOpacity>
+          
           <Text style={styles.priceInfoText}>
             ${limitPrice} per share • ${totalAmount} total
           </Text>
           
           <View style={styles.balanceContainer}>
             <Text style={styles.balanceText}>{availableShares} shares available</Text>
-            <TouchableOpacity style={styles.sellMaxButton} onPress={handleSellMax}>
-              <Text style={styles.sellMaxText}>Sell max</Text>
+            <TouchableOpacity 
+              style={[styles.sellMaxButton, loading && styles.sellMaxButtonDisabled]} 
+              onPress={handleSellMax}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#EF4444" />
+              ) : (
+                <Text style={styles.sellMaxText}>Sell max</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -153,13 +251,21 @@ export default function SharesSellInput() {
         </View>
         
         <TouchableOpacity 
-          style={[styles.previewButton, !shares ? styles.previewButtonDisabled : {}]}
+          style={[styles.previewButton, (!shares || loading) ? styles.previewButtonDisabled : null]}
           onPress={handlePreviewOrder}
-          disabled={!shares}
+          disabled={!shares || loading}
         >
-          <Text style={[styles.previewButtonText, !shares ? styles.previewButtonTextDisabled : {}]}>Preview Order</Text>
+          <Text style={styles.previewButtonText}>Preview Order</Text>
         </TouchableOpacity>
       </View>
+      
+      {/* Order Type Modal */}
+      <OrderTypeModal
+        visible={orderTypeModalVisible}
+        onClose={toggleOrderTypeModal}
+        selectedType={orderType}
+        onSelectType={setOrderType}
+      />
     </SafeAreaView>
   );
 }
@@ -181,18 +287,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     justifyContent: 'center',
-    alignItems: 'flex-start',
-    zIndex: 10,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     color: '#1E293B',
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    zIndex: 1,
   },
   headerRight: {
     width: 40,
@@ -200,31 +300,26 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 16,
-    justifyContent: 'space-between',
-    paddingBottom: 24,
+    paddingTop: 16,
   },
   sharesLabel: {
     fontSize: 16,
+    fontWeight: '500',
     color: '#64748B',
-    textAlign: 'center',
     marginBottom: 16,
-    marginTop: 16,
   },
   amountInputContainer: {
-    alignItems: 'center',
     marginBottom: 24,
   },
+  sharesInputWrapper: {
+    alignItems: 'center',
+    marginBottom: 16,
+    height: 48,
+  },
   sharesText: {
-    fontSize: 32,
+    fontSize: 36,
     fontWeight: '600',
     color: '#1E293B',
-    textAlign: 'center',
-  },
-  sharesInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
   },
   cursor: {
     width: 2,
@@ -232,14 +327,33 @@ const styles = StyleSheet.create({
     backgroundColor: '#EF4444',
     marginLeft: 2,
   },
-  priceInfoText: {
+  orderTypeSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F1F5F9',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 100,
+    marginBottom: 12,
+    alignSelf: 'center',
+  },
+  orderTypeSelectorText: {
     fontSize: 14,
+    fontWeight: '500',
+    color: '#1E293B',
+    marginRight: 4,
+  },
+  priceInfoText: {
+    fontSize: 16,
     color: '#64748B',
-    marginBottom: 8,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   balanceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 16,
   },
   balanceText: {
@@ -249,13 +363,20 @@ const styles = StyleSheet.create({
   },
   sellMaxButton: {
     backgroundColor: '#FEE2E2',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderRadius: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 100,
+  },
+  sellMaxButtonDisabled: {
+    backgroundColor: '#F1F5F9',
+    opacity: 0.7,
   },
   sellMaxText: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 14,
+    fontWeight: '600',
     color: '#EF4444',
   },
   numPadContainer: {
@@ -284,6 +405,7 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     paddingVertical: 16,
     alignItems: 'center',
+    marginBottom: 16,
   },
   previewButtonDisabled: {
     backgroundColor: '#E2E8F0',
@@ -295,5 +417,5 @@ const styles = StyleSheet.create({
   },
   previewButtonTextDisabled: {
     color: '#94A3B8',
-  },
+  }
 });

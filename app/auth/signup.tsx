@@ -91,7 +91,7 @@ export default function Signup() {
     setLoading(true);
     try {
       // Call Supabase signup function
-      const { data, error } = await signUpWithEmail(email, password, firstName, lastName);
+      const { data, error } = await signUpWithEmail(email, password, firstName, lastName, country);
       
       if (error) {
         Alert.alert('Signup Error', error.message || 'An error occurred during signup');
